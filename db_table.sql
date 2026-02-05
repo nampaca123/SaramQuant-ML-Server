@@ -7,6 +7,18 @@ begin
   if not exists (select 1 from pg_type where typname = 'direction_type') then
     create type public.direction_type as enum ('UP','DOWN');
   end if;
+
+  if not exists (select 1 from pg_type where typname = 'benchmark_type') then
+    create type public.benchmark_type as enum ('KR_KOSPI','KR_KOSDAQ','US_SP500','US_NASDAQ');
+  end if;
+
+  if not exists (select 1 from pg_type where typname = 'country_type') then
+    create type public.country_type as enum ('KR','US');
+  end if;
+
+  if not exists (select 1 from pg_type where typname = 'maturity_type') then
+    create type public.maturity_type as enum ('91D','1Y','3Y','10Y');
+  end if;
 end
 $do$;
 
@@ -88,6 +100,41 @@ create index if not exists ml_models_is_active_idx on public.ml_models (is_activ
 create unique index if not exists ml_models_one_active_per_market_uq
   on public.ml_models (market)
   where is_active = true;
+
+create table if not exists public.benchmark_daily_prices (
+  id bigserial primary key,
+  benchmark public.benchmark_type not null,
+  date date not null,
+  close numeric(15,2) not null,
+  created_at timestamptz not null default now(),
+  constraint benchmark_daily_prices_benchmark_date_uq
+    unique (benchmark, date),
+  constraint benchmark_daily_prices_close_chk
+    check (close >= 0)
+);
+
+create index if not exists benchmark_daily_prices_benchmark_date_idx
+  on public.benchmark_daily_prices (benchmark, date desc);
+create index if not exists benchmark_daily_prices_date_idx
+  on public.benchmark_daily_prices (date desc);
+
+create table if not exists public.risk_free_rates (
+  id bigserial primary key,
+  country public.country_type not null,
+  maturity public.maturity_type not null,
+  date date not null,
+  rate numeric(6,4) not null,
+  created_at timestamptz not null default now(),
+  constraint risk_free_rates_country_maturity_date_uq
+    unique (country, maturity, date),
+  constraint risk_free_rates_rate_chk
+    check (rate >= -10 and rate <= 100)
+);
+
+create index if not exists risk_free_rates_country_maturity_date_idx
+  on public.risk_free_rates (country, maturity, date desc);
+create index if not exists risk_free_rates_date_idx
+  on public.risk_free_rates (date desc);
 
 do $do$
 begin

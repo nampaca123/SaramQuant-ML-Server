@@ -1,9 +1,16 @@
 from .connection import get_connection, close_pool
-from .repository import StockRepository, DailyPriceRepository
+from .repository import (
+    StockRepository,
+    DailyPriceRepository,
+    BenchmarkRepository,
+    RiskFreeRateRepository,
+)
 
 __all__ = [
     "get_connection",
     "close_pool",
     "StockRepository",
     "DailyPriceRepository",
+    "BenchmarkRepository",
+    "RiskFreeRateRepository",
 ]
