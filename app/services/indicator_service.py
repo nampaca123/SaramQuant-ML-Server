@@ -4,7 +4,7 @@ import pandas as pd
 from psycopg2.extensions import connection
 
 from app.services.price_service import PriceService
-from app.api.system.errors import InsufficientDataError, APIError
+from app.utils.system.errors import InsufficientDataError, APIError
 from app.quant.indicators import (
     sma, ema, wma,
     rsi, macd, stochastic,

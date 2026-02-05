@@ -14,7 +14,7 @@ from app.schema import (
     Benchmark, Country, Maturity,
     market_to_benchmark, market_to_country,
 )
-from app.api.system.errors import NotFoundError, InsufficientDataError
+from app.utils.system.errors import NotFoundError, InsufficientDataError
 from app.quant.indicators import daily_returns, beta, alpha, sharpe_ratio
 
 logger = logging.getLogger(__name__)

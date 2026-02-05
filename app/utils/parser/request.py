@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from app.api.system.errors import APIError
+from app.utils.system.errors import APIError
 from app.schema import Market
 
 
