@@ -23,10 +23,14 @@ class StockListCollector:
     def collect_all(self) -> dict[Market, int]:
         results = {}
         for market in Market:
-            count = self._collect_market(market)
+            count = self.collect_market(market)
             results[market] = count
-            logger.info(f"[StockList] {market.value}: {count} stocks")
         return results
+
+    def collect_market(self, market: Market) -> int:
+        count = self._collect_market(market)
+        logger.info(f"[StockList] {market.value}: {count} stocks")
+        return count
 
     def _collect_market(self, market: Market) -> int:
         raw_data = self._download(market)
