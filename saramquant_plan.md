@@ -28,9 +28,8 @@ KIS에서 제공하는 마스터 파일. 인증 불필요, 매일 자동 업데�
 |------|-----|
 | KOSPI | `https://new.real.download.dws.co.kr/common/master/kospi_code.mst.zip` |
 | KOSDAQ | `https://new.real.download.dws.co.kr/common/master/kosdaq_code.mst.zip` |
-| 나스닥 | `https://new.real.download.dws.co.kr/common/master/nasmst.cod.zip` |
-| 뉴욕 | `https://new.real.download.dws.co.kr/common/master/nysmst.cod.zip` |
-| 아멕스 | `https://new.real.download.dws.co.kr/common/master/amsmst.cod.zip` |
+| NASDAQ | `https://new.real.download.dws.co.kr/common/master/nasmst.cod.zip` |
+| NYSE | `https://new.real.download.dws.co.kr/common/master/nysmst.cod.zip` |
 
 ### 일봉 OHLCV (FinanceDataReader)
 
@@ -133,7 +132,7 @@ KIS에서 제공하는 마스터 파일. 인증 불필요, 매일 자동 업데�
 | id | BIGSERIAL | PK |
 | symbol | VARCHAR(20) | 종목 코드 |
 | name | VARCHAR(100) | 종목명 |
-| market | VARCHAR(20) | KR_KOSPI, KR_KOSDAQ, US_NYSE, US_NASDAQ, US_AMEX |
+| market | VARCHAR(20) | KR_KOSPI, KR_KOSDAQ, US_NYSE, US_NASDAQ |
 | is_active | BOOLEAN | 활성 여부 |
 | created_at | TIMESTAMP | 생성일시 |
 | updated_at | TIMESTAMP | 수정일시 |
