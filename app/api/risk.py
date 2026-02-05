@@ -4,7 +4,7 @@ from app.api import api_bp
 from app.api.errors import APIError
 from app.db.connection import get_connection
 from app.services import RiskService
-from app.schema.data_sources import Benchmark
+from app.schema import Benchmark
 
 
 VALID_METRICS = {"all", "beta", "alpha", "sharpe"}

@@ -10,7 +10,7 @@ from app.db.repository import (
     RiskFreeRateRepository,
 )
 from app.services.price_service import PriceService
-from app.schema.data_sources import (
+from app.schema import (
     Benchmark, Country, Maturity,
     market_to_benchmark, market_to_country,
 )

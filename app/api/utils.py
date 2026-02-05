@@ -1,7 +1,7 @@
 from datetime import date, datetime
 
 from app.api.errors import APIError
-from app.schema.data_sources import Market
+from app.schema import Market
 
 
 def parse_date(date_str: str | None) -> date | None:

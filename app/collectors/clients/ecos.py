@@ -1,6 +1,6 @@
 import logging
 import requests
-from app.schema.data_sources import Maturity
+from app.schema import Maturity
 from app.utils import retry_with_backoff
 
 logger = logging.getLogger(__name__)

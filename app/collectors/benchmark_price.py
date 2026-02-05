@@ -3,7 +3,7 @@ from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 import FinanceDataReader as fdr
 import pandas as pd
-from app.schema.data_sources import Benchmark, BenchmarkPrice
+from app.schema import Benchmark, BenchmarkPrice
 from app.db import get_connection, BenchmarkRepository
 from app.utils import retry_with_backoff
 

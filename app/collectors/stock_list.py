@@ -3,7 +3,7 @@ import logging
 import zipfile
 import requests
 from requests.exceptions import RequestException
-from app.schema.data_sources import StockInfo, Market
+from app.schema import Market, StockInfo
 from app.db import get_connection, StockRepository
 from app.utils import retry_with_backoff
 

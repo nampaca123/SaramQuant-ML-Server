@@ -2,7 +2,7 @@ import os
 import logging
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
-from app.schema.data_sources import Country, Maturity, RiskFreeRate
+from app.schema import Country, Maturity, RiskFreeRate
 from app.db import get_connection, RiskFreeRateRepository
 from app.collectors.clients import EcosClient, FredClient
 

@@ -2,10 +2,9 @@ from datetime import date
 from decimal import Decimal
 from psycopg2.extensions import connection
 from psycopg2.extras import execute_values
-from app.schema.data_sources import (
-    StockInfo, DailyPrice, Market,
-    Benchmark, BenchmarkPrice,
-    Country, Maturity, RiskFreeRate,
+from app.schema import (
+    Benchmark, BenchmarkPrice, Country, DailyPrice,
+    Market, Maturity, RiskFreeRate, StockInfo,
 )
 
 
