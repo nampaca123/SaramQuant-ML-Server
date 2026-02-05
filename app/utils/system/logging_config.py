@@ -7,10 +7,6 @@ def setup_logging(
     level: int = logging.INFO,
     log_file: str | None = None,
 ) -> None:
-    """
-    Configure logging for the application.
-    Call this once at application startup.
-    """
     handlers: list[logging.Handler] = [
         logging.StreamHandler(sys.stdout),
     ]

@@ -11,12 +11,13 @@ P = ParamSpec("P")
 R = TypeVar("R")
 
 RETRYABLE_EXCEPTIONS = (
-    RequestException,      
-    OperationalError,      
-    InterfaceError,        
+    RequestException,
+    OperationalError,
+    InterfaceError,
     TimeoutError,
     ConnectionError,
 )
+
 
 def retry_with_backoff(
     max_retries: int = 3,
