@@ -7,7 +7,7 @@ from app.db.connection import get_connection
 from app.services import IndicatorService
 
 
-VALID_INDICATORS = {"sma", "ema", "wma", "rsi", "macd", "stochastic", "bollinger", "atr", "obv", "vma"}
+VALID_INDICATORS = {"sma", "ema", "wma", "rsi", "macd", "stochastic", "bollinger", "atr", "adx", "obv", "vma", "sar"}
 
 
 @api_bp.route("/indicators/<symbol>")
@@ -27,9 +27,10 @@ def get_indicators(symbol: str):
         if val:
             params[key] = val
 
-    std_dev = request.args.get("std_dev", type=float)
-    if std_dev:
-        params["std_dev"] = std_dev
+    for key in ["std_dev", "af_start", "af_step", "af_max"]:
+        val = request.args.get(key, type=float)
+        if val:
+            params[key] = val
 
     with get_connection() as conn:
         service = IndicatorService(conn)

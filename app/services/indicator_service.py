@@ -8,8 +8,9 @@ from app.api.errors import InsufficientDataError, APIError
 from app.quant.indicators import (
     sma, ema, wma,
     rsi, macd, stochastic,
-    bollinger_bands, atr,
-    obv, vma
+    bollinger_bands, atr, adx,
+    obv, vma,
+    parabolic_sar
 )
 
 
@@ -23,8 +24,10 @@ class IndicatorService:
         "stochastic": 17,
         "bollinger": 20,
         "atr": 15,
+        "adx": 28,
         "obv": 2,
         "vma": 20,
+        "sar": 5,
     }
 
     def __init__(self, conn: connection):
@@ -119,6 +122,22 @@ class IndicatorService:
             period = params.get("period", 20)
             result = vma(df["volume"], period)
             return self._to_dict(result, f"vma_{period}")
+
+        if indicator == "adx":
+            period = params.get("period", 14)
+            plus_di, minus_di, adx_val = adx(df["high"], df["low"], close, period)
+            return {
+                "plus_di": self._series_to_list(plus_di),
+                "minus_di": self._series_to_list(minus_di),
+                "adx": self._series_to_list(adx_val),
+            }
+
+        if indicator == "sar":
+            af_start = params.get("af_start", 0.02)
+            af_step = params.get("af_step", 0.02)
+            af_max = params.get("af_max", 0.2)
+            result = parabolic_sar(df["high"], df["low"], af_start, af_step, af_max)
+            return self._to_dict(result, "sar")
 
         raise APIError(f"Unknown indicator: {indicator}", 400)
 
