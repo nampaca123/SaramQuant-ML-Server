@@ -25,7 +25,7 @@ class IndicatorRepository:
         query = """
             DELETE FROM stock_indicators
             WHERE stock_id IN (
-                SELECT id FROM stocks WHERE market = ANY(%s)
+                SELECT id FROM stocks WHERE market = ANY(%s::market_type[])
             )
         """
         market_values = [m.value for m in markets]
