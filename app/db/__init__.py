@@ -4,6 +4,7 @@ from .repositories import (
     DailyPriceRepository,
     BenchmarkRepository,
     RiskFreeRateRepository,
+    IndicatorRepository,
 )
 
 __all__ = [
@@ -13,4 +14,5 @@ __all__ = [
     "DailyPriceRepository",
     "BenchmarkRepository",
     "RiskFreeRateRepository",
+    "IndicatorRepository",
 ]

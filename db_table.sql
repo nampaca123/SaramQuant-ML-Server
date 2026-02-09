@@ -136,6 +136,41 @@ create index if not exists risk_free_rates_country_maturity_date_idx
 create index if not exists risk_free_rates_date_idx
   on public.risk_free_rates (date desc);
 
+create table if not exists public.stock_indicators (
+  stock_id   bigint not null references public.stocks(id) on delete cascade,
+  date       date not null,
+  sma_20     numeric(15,4),
+  ema_20     numeric(15,4),
+  wma_20     numeric(15,4),
+  rsi_14     numeric(8,4),
+  macd       numeric(15,4),
+  macd_signal numeric(15,4),
+  macd_hist  numeric(15,4),
+  stoch_k    numeric(8,4),
+  stoch_d    numeric(8,4),
+  bb_upper   numeric(15,4),
+  bb_middle  numeric(15,4),
+  bb_lower   numeric(15,4),
+  atr_14     numeric(15,4),
+  adx_14     numeric(8,4),
+  plus_di    numeric(8,4),
+  minus_di   numeric(8,4),
+  obv        bigint,
+  vma_20     bigint,
+  sar        numeric(15,4),
+  beta       numeric(8,4),
+  alpha      numeric(8,4),
+  sharpe     numeric(8,4),
+  created_at timestamptz not null default now(),
+  constraint stock_indicators_pkey
+    primary key (stock_id, date)
+);
+
+create index if not exists idx_stock_indicators_date
+  on public.stock_indicators (date desc);
+create index if not exists idx_stock_indicators_stock_date
+  on public.stock_indicators (stock_id, date desc);
+
 do $do$
 begin
   if not exists (

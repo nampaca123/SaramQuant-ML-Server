@@ -16,30 +16,46 @@ saramquant-ml-server/
 │   │
 │   ├── collectors/
 │   │   ├── clients/
+│   │   │   ├── alpaca.py
 │   │   │   ├── ecos.py
-│   │   │   └── fred.py
+│   │   │   ├── fred.py
+│   │   │   ├── pykrx.py
+│   │   │   └── yfinance.py
 │   │   ├── benchmark_price.py
-│   │   ├── daily_price.py
+│   │   ├── kr_daily_price.py
 │   │   ├── risk_free_rate.py
-│   │   └── stock_list.py
+│   │   ├── stock_list.py
+│   │   └── us_daily_price.py
 │   │
 │   ├── db/
 │   │   ├── connection.py
-│   │   └── repository.py
+│   │   └── repositories/
+│   │       ├── benchmark.py
+│   │       ├── daily_price.py
+│   │       ├── indicator.py
+│   │       ├── risk_free_rate.py
+│   │       └── stock.py
+│   │
+│   ├── pipeline/
+│   │   ├── __main__.py
+│   │   ├── compute.py
+│   │   └── orchestrator.py
 │   │
 │   ├── quant/
 │   │   └── indicators/
-│   │       ├── momentum.py      # RSI, MACD, Stochastic
-│   │       ├── moving_average.py # SMA, EMA, WMA
-│   │       ├── risk.py          # Beta, Alpha(Jensen's), Sharpe Ratio
-│   │       ├── trend.py         # Parabolic SAR
-│   │       ├── volatility.py    # Bollinger Bands, ATR, ADX
-│   │       └── volume.py        # OBV, VMA
+│   │       ├── momentum.py
+│   │       ├── moving_average.py
+│   │       ├── risk.py
+│   │       ├── trend.py
+│   │       ├── volatility.py
+│   │       └── volume.py
 │   │
 │   ├── schema/
 │   │   ├── data_sources/
-│   │   │   ├── fdr.py
-│   │   │   └── kis.py
+│   │   │   ├── alpaca.py
+│   │   │   ├── kis.py
+│   │   │   ├── pykrx.py
+│   │   │   └── yfinance.py
 │   │   ├── dto/
 │   │   │   ├── price.py
 │   │   │   ├── risk.py
@@ -65,11 +81,6 @@ saramquant-ml-server/
 │           └── retry.py
 │
 └── tests/
-    ├── collectors/
-    │   ├── cli.py
-    │   ├── run_cli.py
-    │   ├── run_daily_price.py
-    │   └── run_stock_list.py
     └── data_source_test/
         └── test_all_sources.py
 ```

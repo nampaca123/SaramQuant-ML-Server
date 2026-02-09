@@ -1,8 +1,9 @@
+import numpy as np
 import pandas as pd
 
 
 def obv(close: pd.Series, volume: pd.Series) -> pd.Series:
-    direction = close.diff().apply(lambda x: 1 if x > 0 else (-1 if x < 0 else 0))
+    direction = np.sign(close.diff())
     return (volume * direction).cumsum()
 
 

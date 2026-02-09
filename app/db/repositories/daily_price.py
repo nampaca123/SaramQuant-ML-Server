@@ -76,6 +76,34 @@ class DailyPriceRepository:
                 for row in cur.fetchall()
             ]
 
+    def get_prices_by_market(
+        self, market: Market, limit_per_stock: int = 300
+    ) -> dict[int, list[tuple]]:
+        query = """
+            SELECT stock_id, date, open, high, low, close, volume
+            FROM (
+                SELECT dp.stock_id, dp.date,
+                       dp.open, dp.high, dp.low, dp.close, dp.volume,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY dp.stock_id ORDER BY dp.date DESC
+                       ) AS rn
+                FROM daily_prices dp
+                JOIN stocks s ON dp.stock_id = s.id
+                WHERE s.market = %s AND s.is_active = true
+            ) sub
+            WHERE rn <= %s
+            ORDER BY stock_id, date
+        """
+        with self._conn.cursor() as cur:
+            cur.execute(query, (market.value, limit_per_stock))
+            result: dict[int, list[tuple]] = {}
+            for row in cur.fetchall():
+                stock_id = row[0]
+                if stock_id not in result:
+                    result[stock_id] = []
+                result[stock_id].append(row[1:])
+            return result
+
     # ── Delete operations ──
 
     def delete_all(self) -> int:
