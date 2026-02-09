@@ -8,11 +8,7 @@ saramquant-ml-server/
 │
 ├── app/
 │   ├── api/
-│   │   └── quant/
-│   │       ├── indicators.py
-│   │       ├── prices.py
-│   │       ├── risk.py
-│   │       └── stocks.py
+│   │   └── __init__.py
 │   │
 │   ├── collectors/
 │   │   ├── clients/
@@ -41,6 +37,10 @@ saramquant-ml-server/
 │   │   ├── compute.py
 │   │   └── orchestrator.py
 │   │
+│   ├── services/
+│   │   ├── indicator_service.py
+│   │   └── price_collection_service.py
+│   │
 │   ├── quant/
 │   │   └── indicators/
 │   │       ├── momentum.py
@@ -67,14 +67,9 @@ saramquant-ml-server/
 │   │       ├── market.py
 │   │       └── maturity.py
 │   │
-│   ├── services/
-│   │   ├── indicator_service.py
-│   │   ├── price_service.py
-│   │   └── risk_service.py
-│   │
 │   └── utils/
-│       ├── parser/
-│       │   └── request.py
+│       ├── quant/
+│       │   └── market_reference_data.py
 │       └── system/
 │           ├── errors.py
 │           ├── logging_config.py
