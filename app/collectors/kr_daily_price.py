@@ -105,6 +105,9 @@ class KrDailyPriceCollector:
             repo = DailyPriceRepository(conn)
 
             for ticker, row in df.iterrows():
+                if int(row["volume"]) == 0:
+                    continue
+
                 stock_id = stock_map.get(str(ticker))
                 if stock_id is None:
                     continue
