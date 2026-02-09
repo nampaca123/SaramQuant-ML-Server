@@ -2,22 +2,30 @@ import argparse
 import logging
 import sys
 from app.utils import setup_logging
-from app.schema.data_sources import Market
-from app.collectors import DailyPriceCollector
+from app.schema import Market
+from app.collectors import KrDailyPriceCollector, UsDailyPriceCollector
 from app.db import close_pool
 
 logger = logging.getLogger(__name__)
 
+KR_MARKETS = {Market.KR_KOSPI, Market.KR_KOSDAQ}
+US_MARKETS = {Market.US_NYSE, Market.US_NASDAQ}
+
 
 def run_daily_price(market: Market | None = None) -> dict[str, int]:
-    collector = DailyPriceCollector()
+    results: dict[str, int] = {}
 
-    if market:
-        logger.info(f"Collecting daily prices for {market.value}")
-    else:
-        logger.info("Collecting daily prices for all markets")
+    if market is None or market in KR_MARKETS:
+        logger.info("Collecting KR daily prices via pykrx")
+        kr = KrDailyPriceCollector()
+        results.update(kr.collect_all(market=market))
 
-    return collector.collect_all(market=market)
+    if market is None or market in US_MARKETS:
+        logger.info("Collecting US daily prices via Alpaca")
+        us = UsDailyPriceCollector()
+        results.update(us.collect_all(market=market))
+
+    return results
 
 
 if __name__ == "__main__":

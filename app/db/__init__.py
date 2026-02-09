@@ -1,5 +1,5 @@
 from .connection import get_connection, close_pool
-from .repository import (
+from .repositories import (
     StockRepository,
     DailyPriceRepository,
     BenchmarkRepository,

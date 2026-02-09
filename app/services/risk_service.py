@@ -4,11 +4,7 @@ from decimal import Decimal
 import pandas as pd
 from psycopg2.extensions import connection
 
-from app.db.repository import (
-    StockRepository,
-    BenchmarkRepository,
-    RiskFreeRateRepository,
-)
+from app.db import StockRepository, BenchmarkRepository, RiskFreeRateRepository
 from app.services.price_service import PriceService
 from app.schema import (
     Benchmark, Country, Maturity,

@@ -1,7 +1,7 @@
 from flask import request, jsonify
 
 from app.api import api_bp, APIError, parse_date
-from app.db.connection import get_connection
+from app.db import get_connection
 from app.services import IndicatorService
 
 

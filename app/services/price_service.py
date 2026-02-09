@@ -4,7 +4,7 @@ from decimal import Decimal
 import pandas as pd
 from psycopg2.extensions import connection
 
-from app.db.repository import StockRepository, DailyPriceRepository
+from app.db import StockRepository, DailyPriceRepository
 from app.utils.system.errors import NotFoundError
 
 

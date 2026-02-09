@@ -2,5 +2,7 @@ from enum import Enum
 
 
 class DataSource(str, Enum):
-    FDR = "FDR"
     KIS = "KIS"
+    PYKRX = "PYKRX"
+    ALPACA = "ALPACA"
+    YFINANCE = "YFINANCE"

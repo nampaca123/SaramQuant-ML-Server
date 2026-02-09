@@ -2,7 +2,7 @@ import argparse
 import logging
 import sys
 from app.utils import setup_logging
-from app.schema.data_sources import Market
+from app.schema import Market
 from app.collectors import StockListCollector
 from app.db import close_pool
 

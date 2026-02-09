@@ -1,7 +1,7 @@
 import argparse
 import logging
 import sys
-from app.schema.data_sources import Market
+from app.schema import Market
 from app.db import close_pool
 from tests.collectors.run_stock_list import run_stock_list
 from tests.collectors.run_daily_price import run_daily_price
@@ -28,7 +28,9 @@ def main() -> int:
     stocks_parser = subparsers.add_parser("collect-stocks", help="Collect stock list from KIS")
     stocks_parser.add_argument("--market", type=parse_market, default=None)
 
-    prices_parser = subparsers.add_parser("collect-prices", help="Collect daily prices via FDR")
+    prices_parser = subparsers.add_parser(
+        "collect-prices", help="Collect daily prices (pykrx for KR, Alpaca for US)"
+    )
     prices_parser.add_argument("--market", type=parse_market, default=None)
 
     subparsers.add_parser("collect-all", help="Collect stocks and prices")

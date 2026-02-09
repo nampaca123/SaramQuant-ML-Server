@@ -1,8 +1,7 @@
 from flask import request, jsonify
 
 from app.api import api_bp, NotFoundError, parse_market
-from app.db.connection import get_connection
-from app.db.repository import StockRepository
+from app.db import get_connection, StockRepository
 
 
 @api_bp.route("/stocks")
