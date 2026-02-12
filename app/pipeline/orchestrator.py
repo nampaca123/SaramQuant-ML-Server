@@ -15,25 +15,42 @@ class PipelineOrchestrator:
         self._collector = PriceCollectionService()
         self._fund_collector = FundamentalCollectionService()
 
-    def run_kr(self) -> None:
-        logger.info("[Pipeline] Starting KR pipeline")
+    def run_daily_kr(self) -> None:
+        logger.info("[Pipeline] Starting KR daily pipeline")
         self._collector.collect_all("kr")
-        self._fund_collector.collect_all("kr")
         self._compute("kr")
         self._compute_fundamentals("kr")
-        logger.info("[Pipeline] KR pipeline complete")
+        logger.info("[Pipeline] KR daily pipeline complete")
 
-    def run_us(self) -> None:
-        logger.info("[Pipeline] Starting US pipeline")
+    def run_daily_us(self) -> None:
+        logger.info("[Pipeline] Starting US daily pipeline")
         self._collector.collect_all("us")
-        self._fund_collector.collect_all("us")
         self._compute("us")
         self._compute_fundamentals("us")
-        logger.info("[Pipeline] US pipeline complete")
+        logger.info("[Pipeline] US daily pipeline complete")
 
-    def run_all(self) -> None:
-        self.run_kr()
-        self.run_us()
+    def run_daily_all(self) -> None:
+        self.run_daily_kr()
+        self.run_daily_us()
+
+    def run_collect_fs_kr(self) -> None:
+        logger.info("[Pipeline] Collecting KR financial statements")
+        self._fund_collector.collect_all("kr")
+        logger.info("[Pipeline] KR financial statement collection complete")
+
+    def run_collect_fs_us(self) -> None:
+        logger.info("[Pipeline] Collecting US financial statements")
+        self._fund_collector.collect_all("us")
+        logger.info("[Pipeline] US financial statement collection complete")
+
+    def run_full(self) -> None:
+        logger.info("[Pipeline] Starting full pipeline")
+        self.run_daily_kr()
+        self.run_daily_us()
+        self.run_collect_fs_kr()
+        self.run_collect_fs_us()
+        self._compute_fundamentals_all()
+        logger.info("[Pipeline] Full pipeline complete")
 
     def _compute(self, region: str) -> None:
         markets = REGION_CONFIG[region]["markets"]
@@ -48,3 +65,11 @@ class PipelineOrchestrator:
             engine = FundamentalComputeEngine(conn)
             count = engine.run(markets)
             logger.info(f"[Pipeline] Computed {count} fundamental rows")
+
+    def _compute_fundamentals_all(self) -> None:
+        for region in ("kr", "us"):
+            markets = REGION_CONFIG[region]["markets"]
+            with get_connection() as conn:
+                engine = FundamentalComputeEngine(conn)
+                count = engine.run(markets)
+                logger.info(f"[Pipeline] Re-computed {count} fundamental rows ({region})")

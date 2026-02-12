@@ -32,7 +32,7 @@ class DailyPriceRepository:
         if not rows:
             return 0
         with self._conn.cursor() as cur:
-            execute_values(cur, self._UPSERT_SQL, rows)
+            execute_values(cur, self._UPSERT_SQL, rows, page_size=5000)
             return cur.rowcount
 
     def get_latest_date(self, stock_id: int) -> date | None:

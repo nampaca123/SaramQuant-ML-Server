@@ -61,28 +61,34 @@ class UsFinancialStatementCollector:
 
         ticker_to_cik = self._edgar.fetch_company_tickers()
         stocks = self._load_us_stocks()
+        if not stocks:
+            logger.warning("[UsFS] No active US stocks in DB")
+            return {"success": 0, "failed": 0}
 
-        success = failed = 0
-        for stock_id, symbol in stocks:
+        all_statements: list[FinancialStatement] = []
+        matched = failed = 0
+
+        for i, (stock_id, symbol) in enumerate(stocks, 1):
             cik = ticker_to_cik.get(symbol.upper())
             if not cik:
                 continue
             try:
-                count = self._collect_stock(stock_id, cik, data_dir)
-                success += count
+                facts = self._edgar.parse_company_facts(data_dir, cik)
+                if not facts:
+                    continue
+                stmts = self._extract_from_facts(stock_id, facts)
+                all_statements.extend(stmts)
+                matched += 1
             except Exception as e:
-                logger.warning(f"[UsFS] Skip stock {stock_id} ({symbol}): {e}")
+                logger.warning(f"[UsFS] Skip {symbol} ({stock_id}): {e}")
                 failed += 1
 
-        logger.info(f"[UsFS] Done: {success} saved, {failed} failed")
-        return {"success": success, "failed": failed}
+            if i % 1000 == 0:
+                logger.info(f"[UsFS] Parsed {i}/{len(stocks)} stocks, {len(all_statements)} stmts")
 
-    def _collect_stock(self, stock_id: int, cik: int, data_dir: str) -> int:
-        facts = self._edgar.parse_company_facts(data_dir, cik)
-        if not facts:
-            return 0
-        statements = self._extract_from_facts(stock_id, facts)
-        return self._save(statements)
+        saved = self._save(all_statements)
+        logger.info(f"[UsFS] Done: {saved} saved from {matched} stocks, {failed} failed")
+        return {"success": saved, "failed": failed}
 
     def _extract_from_facts(
         self, stock_id: int, facts: dict
