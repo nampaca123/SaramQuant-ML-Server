@@ -8,7 +8,10 @@ def create_app() -> Flask:
     register_error_handlers(app)
 
     from app.api import api_bp
+    from app.api.quant.simulation import simulation_bp
+
     app.register_blueprint(api_bp)
+    app.register_blueprint(simulation_bp)
 
     @app.route("/health")
     def health():
