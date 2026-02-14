@@ -504,6 +504,7 @@ python -m app.pipeline full    # 전체 (일일 + 재무제표 + 펀더멘털 �
 | GET | `/api/prices/daily/<symbol>` | 일봉 데이터 |
 | GET | `/api/indicators/<symbol>` | 기술적 지표 (온디맨드 계산) |
 | GET | `/api/risk/<symbol>` | 리스크 지표 (Beta, Alpha, Sharpe) |
+| GET | `/api/stocks/<symbol>/simulation` | 몬테카를로 시뮬레이션 (GBM/Bootstrap) |
 | GET | `/health` | 헬스 체크 |
 
 ### US Financial Statements Collector (Nest.js, 마이크로서비스)

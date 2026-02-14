@@ -8,7 +8,9 @@ saramquant-ml-server/
 │
 ├── app/
 │   ├── api/
-│   │   └── __init__.py
+│   │   ├── __init__.py
+│   │   └── quant/
+│   │       └── simulation.py
 │   │
 │   ├── collectors/
 │   │   ├── clients/
@@ -46,20 +48,24 @@ saramquant-ml-server/
 │   │   ├── fundamental_collection_service.py
 │   │   ├── fundamental_service.py
 │   │   ├── indicator_service.py
-│   │   └── price_collection_service.py
+│   │   ├── price_collection_service.py
+│   │   └── simulation_service.py
 │   │
 │   ├── quant/
 │   │   ├── fundamentals/
 │   │   │   ├── profitability.py
 │   │   │   ├── stability.py
 │   │   │   └── valuation.py
-│   │   └── indicators/
-│   │       ├── momentum.py
-│   │       ├── moving_average.py
-│   │       ├── risk.py
-│   │       ├── trend.py
-│   │       ├── volatility.py
-│   │       └── volume.py
+│   │   ├── indicators/
+│   │   │   ├── momentum.py
+│   │   │   ├── moving_average.py
+│   │   │   ├── risk.py
+│   │   │   ├── trend.py
+│   │   │   ├── volatility.py
+│   │   │   └── volume.py
+│   │   └── simulation/
+│   │       ├── monte_carlo.py
+│   │       └── path_generator.py
 │   │
 │   ├── schema/
 │   │   ├── data_sources/
