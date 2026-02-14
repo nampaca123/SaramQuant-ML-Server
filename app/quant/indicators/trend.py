@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 
 
@@ -6,53 +7,55 @@ def parabolic_sar(
     low: pd.Series,
     af_start: float = 0.02,
     af_step: float = 0.02,
-    af_max: float = 0.2
+    af_max: float = 0.2,
 ) -> pd.Series:
-    length = len(high)
-    sar = pd.Series(index=high.index, dtype=float)
+    h = high.values.astype(float)
+    l = low.values.astype(float)
+    n = len(h)
+    sar = np.empty(n)
 
-    is_uptrend = high.iloc[1] > high.iloc[0] if length > 1 else True
+    is_uptrend = h[1] > h[0] if n > 1 else True
     af = af_start
 
     if is_uptrend:
-        sar.iloc[0] = low.iloc[0]
-        ep = high.iloc[0]
+        sar[0] = l[0]
+        ep = h[0]
     else:
-        sar.iloc[0] = high.iloc[0]
-        ep = low.iloc[0]
+        sar[0] = h[0]
+        ep = l[0]
 
-    for i in range(1, length):
-        prev_sar = sar.iloc[i - 1]
+    for i in range(1, n):
+        prev_sar = sar[i - 1]
 
         if is_uptrend:
-            sar.iloc[i] = prev_sar + af * (ep - prev_sar)
-            sar.iloc[i] = min(sar.iloc[i], low.iloc[i - 1])
+            s = prev_sar + af * (ep - prev_sar)
+            s = min(s, l[i - 1])
             if i >= 2:
-                sar.iloc[i] = min(sar.iloc[i], low.iloc[i - 2])
+                s = min(s, l[i - 2])
 
-            if low.iloc[i] < sar.iloc[i]:
+            if l[i] < s:
                 is_uptrend = False
-                sar.iloc[i] = ep
-                ep = low.iloc[i]
+                s = ep
+                ep = l[i]
                 af = af_start
-            else:
-                if high.iloc[i] > ep:
-                    ep = high.iloc[i]
-                    af = min(af + af_step, af_max)
+            elif h[i] > ep:
+                ep = h[i]
+                af = min(af + af_step, af_max)
         else:
-            sar.iloc[i] = prev_sar + af * (ep - prev_sar)
-            sar.iloc[i] = max(sar.iloc[i], high.iloc[i - 1])
+            s = prev_sar + af * (ep - prev_sar)
+            s = max(s, h[i - 1])
             if i >= 2:
-                sar.iloc[i] = max(sar.iloc[i], high.iloc[i - 2])
+                s = max(s, h[i - 2])
 
-            if high.iloc[i] > sar.iloc[i]:
+            if h[i] > s:
                 is_uptrend = True
-                sar.iloc[i] = ep
-                ep = high.iloc[i]
+                s = ep
+                ep = h[i]
                 af = af_start
-            else:
-                if low.iloc[i] < ep:
-                    ep = low.iloc[i]
-                    af = min(af + af_step, af_max)
+            elif l[i] < ep:
+                ep = l[i]
+                af = min(af + af_step, af_max)
 
-    return sar
+        sar[i] = s
+
+    return pd.Series(sar, index=high.index)

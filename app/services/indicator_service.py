@@ -1,5 +1,3 @@
-from decimal import Decimal
-
 import pandas as pd
 
 from app.quant.indicators import (
@@ -30,8 +28,7 @@ class IndicatorService:
         if len(raw_prices) < MIN_ROWS:
             return None
         df = pd.DataFrame(raw_prices, columns=["date", "open", "high", "low", "close", "volume"])
-        for col in ("open", "high", "low", "close"):
-            df[col] = df[col].apply(lambda v: float(v) if isinstance(v, Decimal) else v)
+        df[["open", "high", "low", "close"]] = df[["open", "high", "low", "close"]].astype(float)
         df.set_index("date", inplace=True)
         return df
 

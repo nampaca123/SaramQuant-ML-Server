@@ -36,12 +36,14 @@ class PipelineOrchestrator:
     def run_collect_fs_kr(self) -> None:
         logger.info("[Pipeline] Collecting KR financial statements")
         self._fund_collector.collect_all("kr")
-        logger.info("[Pipeline] KR financial statement collection complete")
+        self._compute_fundamentals("kr")
+        logger.info("[Pipeline] KR financial statement pipeline complete")
 
     def run_collect_fs_us(self) -> None:
         logger.info("[Pipeline] Collecting US financial statements")
         self._fund_collector.collect_all("us")
-        logger.info("[Pipeline] US financial statement collection complete")
+        self._compute_fundamentals("us")
+        logger.info("[Pipeline] US financial statement pipeline complete")
 
     def run_full(self) -> None:
         logger.info("[Pipeline] Starting full pipeline")
