@@ -55,6 +55,13 @@ class FundamentalCollectionService:
             elif status == "failed":
                 raise RuntimeError(f"Remote job failed: {data.get('error', 'unknown')}")
 
-            logger.info(f"[FundCollection] US remote job {job_id}: {status}")
+            progress = data.get("progress", {})
+            phase = progress.get("phase", "processing")
+            parsed = progress.get("parsed")
+            total = progress.get("total")
+            if parsed and total:
+                logger.info(f"[FundCollection] US remote: {phase} ({parsed}/{total})")
+            else:
+                logger.info(f"[FundCollection] US remote: {phase}")
 
         raise TimeoutError(f"Remote job {job_id} timed out after {POLL_TIMEOUT}s")
