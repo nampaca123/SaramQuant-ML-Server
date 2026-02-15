@@ -259,3 +259,90 @@ begin
   end if;
 end
 $do$;
+
+-- ============================================================
+-- User / Auth tables
+-- ============================================================
+
+do $do$
+begin
+  if not exists (select 1 from pg_type where typname = 'oauth_provider_type') then
+    create type public.oauth_provider_type as enum ('GOOGLE','KAKAO');
+  end if;
+
+  if not exists (select 1 from pg_type where typname = 'gender_type') then
+    create type public.gender_type as enum ('MALE','FEMALE','UNSPECIFIED');
+  end if;
+
+  if not exists (select 1 from pg_type where typname = 'investment_experience_type') then
+    create type public.investment_experience_type as enum ('BEGINNER','INTERMEDIATE','ADVANCED');
+  end if;
+
+  if not exists (select 1 from pg_type where typname = 'user_role_type') then
+    create type public.user_role_type as enum ('STANDARD','ADMIN');
+  end if;
+end
+$do$;
+
+create table if not exists public.users (
+  id uuid primary key default gen_random_uuid(),
+  email varchar(255) not null unique,
+  name varchar(100) not null,
+  provider public.oauth_provider_type not null,
+  provider_id varchar(255) not null,
+  role public.user_role_type not null default 'STANDARD',
+  created_at timestamptz not null default now(),
+  last_login_at timestamptz not null default now(),
+  constraint users_provider_uq unique (provider, provider_id)
+);
+
+create table if not exists public.user_profiles (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null unique references public.users(id) on delete cascade,
+  nickname varchar(30),
+  birth_year int,
+  gender public.gender_type,
+  profile_image_url text,
+  investment_experience public.investment_experience_type not null default 'BEGINNER',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.user_preferred_markets (
+  user_profile_id uuid not null references public.user_profiles(id) on delete cascade,
+  market market_type not null,
+  primary key (user_profile_id, market)
+);
+
+create table if not exists public.refresh_tokens (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.users(id) on delete cascade,
+  token_hash varchar(64) not null unique,
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now(),
+  revoked_at timestamptz
+);
+
+create index if not exists refresh_tokens_user_id_idx
+  on public.refresh_tokens (user_id);
+create index if not exists refresh_tokens_active_idx
+  on public.refresh_tokens (expires_at)
+  where revoked_at is null;
+
+do $do$
+begin
+  if not exists (
+    select 1
+    from pg_trigger t
+    join pg_class c on c.oid = t.tgrelid
+    where t.tgname = 'trg_user_profiles_updated_at'
+      and c.relname = 'user_profiles'
+  ) then
+    execute $sql$
+      create trigger trg_user_profiles_updated_at
+      before update on public.user_profiles
+      for each row execute function public.set_updated_at();
+    $sql$;
+  end if;
+end
+$do$;
