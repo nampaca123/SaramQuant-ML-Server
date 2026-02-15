@@ -1,4 +1,5 @@
 import logging
+import time
 import yfinance as yf
 import pandas as pd
 
@@ -6,6 +7,17 @@ logger = logging.getLogger(__name__)
 
 
 class YfinanceClient:
+    SECTOR_DELAY = 0.4
+
+    def fetch_sector(self, symbol: str) -> str | None:
+        try:
+            result = yf.Ticker(symbol).info.get("industry")
+            time.sleep(self.SECTOR_DELAY)
+            return result
+        except Exception:
+            time.sleep(self.SECTOR_DELAY)
+            return None
+
     def fetch_index_prices(self, symbol: str, start: str, end: str) -> pd.DataFrame:
         """Fetch index daily close prices.
         Returns DataFrame with index=date, columns=[close].

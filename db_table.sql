@@ -33,6 +33,7 @@ create table if not exists public.stocks (
   market public.market_type not null,
   is_active boolean not null default true,
   dart_corp_code varchar(8),
+  sector varchar(100),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint stocks_symbol_market_uq
@@ -43,6 +44,10 @@ create index if not exists stocks_market_idx on public.stocks (market);
 create index if not exists stocks_is_active_idx on public.stocks (is_active);
 create index if not exists stocks_dart_corp_code_idx on public.stocks (dart_corp_code)
   where dart_corp_code is not null;
+create index if not exists stocks_sector_null_idx on public.stocks (market)
+  where sector is null and is_active = true;
+create index if not exists stocks_sector_idx on public.stocks (sector)
+  where sector is not null;
 
 create table if not exists public.daily_prices (
   id bigserial primary key,

@@ -88,6 +88,28 @@ class StockRepository:
             cur.execute(query, params)
             return [(row[0], row[1], Market(row[2])) for row in cur.fetchall()]
 
+    def get_stocks_without_sector(self, market: Market) -> list[tuple[int, str]]:
+        query = """
+            SELECT id, symbol FROM stocks
+            WHERE sector IS NULL AND is_active = true AND market = %s
+        """
+        with self._conn.cursor() as cur:
+            cur.execute(query, (market.value,))
+            return [(row[0], row[1]) for row in cur.fetchall()]
+
+    def update_sectors(self, updates: list[tuple[str, str, str]]) -> int:
+        if not updates:
+            return 0
+        query = """
+            UPDATE stocks AS s
+            SET sector = v.sector, updated_at = now()
+            FROM (VALUES %s) AS v(symbol, market, sector)
+            WHERE s.symbol = v.symbol AND s.market = v.market::market_type
+        """
+        with self._conn.cursor() as cur:
+            execute_values(cur, query, updates)
+            return cur.rowcount
+
     def deactivate_unlisted(self, market: Market, active_symbols: set[str]) -> int:
         if not active_symbols:
             return 0

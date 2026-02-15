@@ -5,7 +5,7 @@ from app.utils import setup_logging
 from app.db import close_pool
 from app.pipeline.orchestrator import PipelineOrchestrator
 
-COMMANDS = {"kr", "us", "all", "kr-fs", "us-fs", "full"}
+COMMANDS = {"kr", "us", "all", "kr-fs", "us-fs", "full", "sectors"}
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +33,8 @@ def main() -> int:
                 pipeline.run_collect_fs_us()
             case "full":
                 pipeline.run_full()
+            case "sectors":
+                pipeline.run_sectors()
     except Exception as e:
         logger.error(f"[Pipeline] Failed: {e}", exc_info=True)
         return 1

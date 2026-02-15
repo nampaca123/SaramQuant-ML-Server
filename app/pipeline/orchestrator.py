@@ -4,6 +4,7 @@ from app.db import get_connection
 from app.services import PriceCollectionService
 from app.services.price_collection_service import REGION_CONFIG
 from app.services.fundamental_collection_service import FundamentalCollectionService
+from app.collectors import SectorCollector
 from app.pipeline.indicator_compute import IndicatorComputeEngine
 from app.pipeline.fundamental_compute import FundamentalComputeEngine
 
@@ -67,6 +68,12 @@ class PipelineOrchestrator:
             engine = FundamentalComputeEngine(conn)
             count = engine.run(markets)
             logger.info(f"[Pipeline] Computed {count} fundamental rows")
+
+    def run_sectors(self) -> None:
+        logger.info("[Pipeline] Starting sector collection")
+        all_markets = REGION_CONFIG["kr"]["markets"] + REGION_CONFIG["us"]["markets"]
+        count = SectorCollector().collect(all_markets)
+        logger.info(f"[Pipeline] Sector collection complete: {count} updated")
 
     def _compute_fundamentals_all(self) -> None:
         for region in ("kr", "us"):

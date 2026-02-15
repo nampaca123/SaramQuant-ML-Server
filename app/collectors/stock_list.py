@@ -16,7 +16,8 @@ MST_URLS = {
     Market.US_NASDAQ: "https://new.real.download.dws.co.kr/common/master/nasmst.cod.zip",
 }
 
-KR_INVALID_KEYWORDS = ["스팩", "리츠", "ETN", "ETF", "선물", "인버스", "레버리지"]
+KR_STOCK_TYPE_CODE = b"ST"
+US_STOCK_TYPE_CODE = "2"
 
 
 class StockListCollector:
@@ -68,15 +69,15 @@ class StockListCollector:
         stocks = []
 
         for line in data.split(b"\n"):
-            if len(line) < 61:
+            if len(line) < 63:
+                continue
+            if line[61:63] != KR_STOCK_TYPE_CODE:
                 continue
 
             symbol = line[0:9].decode("cp949", errors="ignore").strip()
             name = line[21:61].decode("cp949", errors="ignore").strip()
 
-            if not symbol or not name:
-                continue
-            if self._is_invalid_kr_stock(symbol, name):
+            if not symbol or not symbol.isdigit() or not name or "스팩" in name:
                 continue
 
             stocks.append(StockInfo(symbol=symbol, name=name, market=market))
@@ -89,25 +90,17 @@ class StockListCollector:
 
         for line in lines:
             parts = line.split("\t")
-            if len(parts) < 8:
+            if len(parts) < 9:
+                continue
+            if parts[8].strip() != US_STOCK_TYPE_CODE:
                 continue
 
             symbol = parts[4].strip()
             name = parts[7].strip()
 
-            if not symbol or not name:
-                continue
-            if self._is_invalid_us_stock(symbol):
+            if not symbol or not name or len(symbol) > 5 or not symbol.isalpha():
                 continue
 
             stocks.append(StockInfo(symbol=symbol, name=name, market=market))
 
         return stocks
-
-    def _is_invalid_kr_stock(self, symbol: str, name: str) -> bool:
-        if not symbol.isdigit():
-            return True
-        return any(kw in name for kw in KR_INVALID_KEYWORDS)
-
-    def _is_invalid_us_stock(self, symbol: str) -> bool:
-        return len(symbol) > 5 or not symbol.isalpha()
