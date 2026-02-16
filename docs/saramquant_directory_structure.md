@@ -13,19 +13,27 @@ saramquant-ml-server/
 │   │       └── simulation.py
 │   │
 │   ├── collectors/
+│   │   ├── __init__.py                  # re-export (service/* → 외부 참조 유지)
 │   │   ├── clients/
 │   │   │   ├── alpaca.py
 │   │   │   ├── dart.py
 │   │   │   ├── ecos.py
 │   │   │   ├── fred.py
+│   │   │   ├── nasdaq_screener.py       # NASDAQ Screener API (US 벌크 섹터)
 │   │   │   ├── pykrx.py
 │   │   │   └── yfinance.py
-│   │   ├── benchmark_price.py
-│   │   ├── kr_daily_price.py
-│   │   ├── kr_financial_statement.py
-│   │   ├── risk_free_rate.py
-│   │   ├── stock_list.py
-│   │   └── us_daily_price.py
+│   │   ├── service/
+│   │   │   ├── benchmark_price.py
+│   │   │   ├── kr_daily_price.py
+│   │   │   ├── kr_financial_statement.py
+│   │   │   ├── risk_free_rate.py
+│   │   │   ├── sector.py
+│   │   │   ├── stock_list.py
+│   │   │   └── us_daily_price.py
+│   │   └── utils/
+│   │       ├── market_groups.py         # KR_MARKETS, US_MARKETS, MARKET_TO_PYKRX
+│   │       ├── skip_rules.py            # SKIP_INDICES, 종목 스킵 판별 함수
+│   │       └── throttle.py              # Throttle 공유 유틸리티
 │   │
 │   ├── db/
 │   │   ├── connection.py
