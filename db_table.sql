@@ -23,6 +23,10 @@ begin
   if not exists (select 1 from pg_type where typname = 'report_type') then
     create type public.report_type as enum ('Q1','Q2','Q3','FY');
   end if;
+
+  if not exists (select 1 from pg_type where typname = 'data_coverage_type') then
+    create type public.data_coverage_type as enum ('FULL','LOSS','PARTIAL','INSUFFICIENT','NO_FS');
+  end if;
 end
 $do$;
 
@@ -215,6 +219,7 @@ create table if not exists public.stock_fundamentals (
   roe numeric(10,4),
   debt_ratio numeric(10,4),
   operating_margin numeric(10,4),
+  data_coverage public.data_coverage_type not null default 'FULL',
   created_at timestamptz not null default now(),
   constraint stock_fundamentals_pkey
     primary key (stock_id, date)

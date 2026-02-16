@@ -1,11 +1,12 @@
 import logging
+from datetime import date
 
 from psycopg2.extensions import connection
 
 from app.db import DailyPriceRepository
 from app.db.repositories.financial_statement import FinancialStatementRepository
 from app.db.repositories.fundamental import FundamentalRepository
-from app.schema import Market
+from app.schema import DataCoverage, Market
 from app.services.fundamental_service import FundamentalService
 
 logger = logging.getLogger(__name__)
@@ -35,14 +36,12 @@ class FundamentalComputeEngine:
 
     def _process_market(self, market: Market) -> list[tuple]:
         fs_map = self._fs_repo.get_ttm_by_market(market)
-        if not fs_map:
-            logger.warning(f"[FundCompute] No financial data for {market.value}")
-            return []
-
         price_map = self._price_repo.get_prices_by_market(market, limit_per_stock=1)
 
         rows: list[tuple] = []
-        for i, (stock_id, statements) in enumerate(fs_map.items(), 1):
+        fs_stock_ids = set(fs_map.keys()) if fs_map else set()
+
+        for i, (stock_id, statements) in enumerate((fs_map or {}).items(), 1):
             prices = price_map.get(stock_id)
             if not prices:
                 continue
@@ -55,7 +54,18 @@ class FundamentalComputeEngine:
             if i % 500 == 0:
                 logger.info(f"[FundCompute] {market.value}: {i}/{len(fs_map)} stocks")
 
+        no_fs_count = 0
+        for stock_id in price_map:
+            if stock_id not in fs_stock_ids:
+                rows.append((
+                    stock_id, date.today(),
+                    None, None, None, None, None, None, None,
+                    DataCoverage.NO_FS.value,
+                ))
+                no_fs_count += 1
+
         logger.info(
-            f"[FundCompute] {market.value}: {len(rows)}/{len(fs_map)} stocks computed"
+            f"[FundCompute] {market.value}: {len(rows)} rows "
+            f"({len(rows) - no_fs_count} computed, {no_fs_count} NO_FS)"
         )
         return rows

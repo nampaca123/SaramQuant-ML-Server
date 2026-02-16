@@ -7,6 +7,7 @@ COLUMNS = [
     "stock_id", "date",
     "per", "pbr", "eps", "bps",
     "roe", "debt_ratio", "operating_margin",
+    "data_coverage",
 ]
 
 

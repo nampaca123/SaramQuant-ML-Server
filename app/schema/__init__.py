@@ -2,6 +2,7 @@ from .dto import BenchmarkPrice, DailyPrice, FinancialStatement, OHLCV, RiskFree
 from .enums import (
     Benchmark,
     Country,
+    DataCoverage,
     DataSource,
     Market,
     Maturity,
@@ -15,6 +16,7 @@ __all__ = [
     "BenchmarkPrice",
     "Country",
     "DailyPrice",
+    "DataCoverage",
     "DataSource",
     "FinancialStatement",
     "Market",

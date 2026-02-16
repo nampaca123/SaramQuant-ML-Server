@@ -1,6 +1,6 @@
 from datetime import date
 
-from app.schema import FinancialStatement, ReportType
+from app.schema import DataCoverage, FinancialStatement, ReportType
 from app.quant.fundamentals import (
     eps, bps, per, pbr,
     roe, operating_margin,
@@ -41,6 +41,13 @@ class FundamentalService:
         pbr_val = pbr(latest_price, bps_val) if bps_val is not None else None
         debt_val = debt_ratio(bs_liabilities, bs_equity) if bs_equity and bs_liabilities is not None else None
 
+        if ttm is not None:
+            coverage = DataCoverage.LOSS if eps_val is not None and eps_val < 0 else DataCoverage.FULL
+        elif bs_equity is not None or bs_liabilities is not None:
+            coverage = DataCoverage.PARTIAL
+        else:
+            coverage = DataCoverage.INSUFFICIENT
+
         return (
             stock_id,
             date.today(),
@@ -51,6 +58,7 @@ class FundamentalService:
             _round(roe_val),
             _round(debt_val),
             _round(op_margin_val),
+            coverage.value,
         )
 
     @staticmethod

@@ -64,7 +64,7 @@ class StockRepository:
             INSERT INTO stocks (symbol, name, market)
             VALUES %s
             ON CONFLICT (symbol, market)
-            DO UPDATE SET name = EXCLUDED.name, updated_at = now()
+            DO UPDATE SET name = EXCLUDED.name, updated_at = now(), is_active = true
         """
         data = [(s.symbol, s.name, s.market.value) for s in stocks]
         with self._conn.cursor() as cur:
@@ -108,6 +108,16 @@ class StockRepository:
         """
         with self._conn.cursor() as cur:
             execute_values(cur, query, updates)
+            return cur.rowcount
+
+    def deactivate_no_price_stocks(self, market: Market) -> int:
+        query = """
+            UPDATE stocks SET is_active = false, updated_at = now()
+            WHERE market = %s AND is_active = true
+              AND id NOT IN (SELECT DISTINCT stock_id FROM daily_prices)
+        """
+        with self._conn.cursor() as cur:
+            cur.execute(query, (market.value,))
             return cur.rowcount
 
     def deactivate_unlisted(self, market: Market, active_symbols: set[str]) -> int:

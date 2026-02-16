@@ -1,6 +1,7 @@
 import logging
 
 from app.db import get_connection
+from app.db.repositories.stock import StockRepository
 from app.services import PriceCollectionService
 from app.services.price_collection_service import REGION_CONFIG
 from app.services.fundamental_collection_service import FundamentalCollectionService
@@ -19,6 +20,7 @@ class PipelineOrchestrator:
     def run_daily_kr(self) -> None:
         logger.info("[Pipeline] Starting KR daily pipeline")
         self._collector.collect_all("kr")
+        self._deactivate_no_price_stocks(REGION_CONFIG["kr"]["markets"])
         self._compute("kr")
         self._compute_fundamentals("kr")
         logger.info("[Pipeline] KR daily pipeline complete")
@@ -26,6 +28,7 @@ class PipelineOrchestrator:
     def run_daily_us(self) -> None:
         logger.info("[Pipeline] Starting US daily pipeline")
         self._collector.collect_all("us")
+        self._deactivate_no_price_stocks(REGION_CONFIG["us"]["markets"])
         self._compute("us")
         self._compute_fundamentals("us")
         logger.info("[Pipeline] US daily pipeline complete")
@@ -54,6 +57,15 @@ class PipelineOrchestrator:
         self.run_collect_fs_us()
         self._compute_fundamentals_all()
         logger.info("[Pipeline] Full pipeline complete")
+
+    def _deactivate_no_price_stocks(self, markets: list) -> None:
+        with get_connection() as conn:
+            repo = StockRepository(conn)
+            for market in markets:
+                count = repo.deactivate_no_price_stocks(market)
+                if count:
+                    logger.info(f"[Pipeline] Deactivated {count} no-price stocks in {market.value}")
+            conn.commit()
 
     def _compute(self, region: str) -> None:
         markets = REGION_CONFIG[region]["markets"]

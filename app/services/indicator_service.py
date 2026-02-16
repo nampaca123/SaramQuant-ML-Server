@@ -1,3 +1,5 @@
+import warnings
+
 import pandas as pd
 
 from app.quant.indicators import (
@@ -84,17 +86,20 @@ class IndicatorService:
         clean_len = len(stock_ret.dropna())
         beta_val = alpha_val = sharpe_val = None
 
-        if benchmark_ret is not None and clean_len >= MIN_ROWS:
-            try:
-                beta_val = round(float(beta(stock_ret, benchmark_ret)), 4)
-                alpha_val = round(float(alpha(stock_ret, benchmark_ret, rf_rate, beta_val)), 4)
-            except Exception:
-                pass
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
 
-        if clean_len >= MIN_ROWS:
-            try:
-                sharpe_val = round(float(sharpe_ratio(stock_ret, rf_rate)), 4)
-            except Exception:
-                pass
+            if benchmark_ret is not None and clean_len >= MIN_ROWS:
+                try:
+                    beta_val = round(float(beta(stock_ret, benchmark_ret)), 4)
+                    alpha_val = round(float(alpha(stock_ret, benchmark_ret, rf_rate, beta_val)), 4)
+                except Exception:
+                    pass
+
+            if clean_len >= MIN_ROWS:
+                try:
+                    sharpe_val = round(float(sharpe_ratio(stock_ret, rf_rate)), 4)
+                except Exception:
+                    pass
 
         return beta_val, alpha_val, sharpe_val
