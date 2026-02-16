@@ -86,14 +86,14 @@ class IndicatorService:
 
         if benchmark_ret is not None and clean_len >= MIN_ROWS:
             try:
-                beta_val = round(beta(stock_ret, benchmark_ret), 4)
-                alpha_val = round(alpha(stock_ret, benchmark_ret, rf_rate, beta_val), 4)
+                beta_val = round(float(beta(stock_ret, benchmark_ret)), 4)
+                alpha_val = round(float(alpha(stock_ret, benchmark_ret, rf_rate, beta_val)), 4)
             except Exception:
                 pass
 
         if clean_len >= MIN_ROWS:
             try:
-                sharpe_val = round(sharpe_ratio(stock_ret, rf_rate), 4)
+                sharpe_val = round(float(sharpe_ratio(stock_ret, rf_rate)), 4)
             except Exception:
                 pass
 

@@ -1,8 +1,8 @@
-pykrx==1.2.3
+pykrx==1.2.4
 alpaca-py==0.43.2
 yfinance==1.1.0
 pandas==2.3.3
-numpy==1.26.4
+numpy==2.4.2
 requests==2.32.5
 psycopg2-binary==2.9.11
 python-dotenv==1.2.1
