@@ -1,29 +1,19 @@
 import logging
-import os
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pandas as pd
 
 from app.schema import Market
 from app.db import get_connection, StockRepository
-from app.collectors.clients import PykrxClient, YfinanceClient, FinnhubClient
+from app.collectors.clients import PykrxClient, NasdaqScreenerClient
+from app.collectors.utils.market_groups import MARKET_TO_PYKRX, KR_MARKETS, US_MARKETS
 
 logger = logging.getLogger(__name__)
-
-MARKET_TO_PYKRX = {
-    Market.KR_KOSPI: "KOSPI",
-    Market.KR_KOSDAQ: "KOSDAQ",
-}
-
-KR_MARKETS = {Market.KR_KOSPI, Market.KR_KOSDAQ}
-US_MARKETS = {Market.US_NYSE, Market.US_NASDAQ}
 
 
 class SectorCollector:
     def __init__(self):
         self._pykrx = PykrxClient()
-        self._yfinance = YfinanceClient()
-        self._finnhub = FinnhubClient(os.environ["FINNHUB_API_KEY"])
+        self._nasdaq = NasdaqScreenerClient()
 
     def collect(self, markets: list[Market]) -> int:
         total = 0
@@ -92,30 +82,14 @@ class SectorCollector:
             return 0
 
         df = pd.DataFrame(rows, columns=["symbol", "market"])
-        symbols = df["symbol"].tolist()
-        logger.info(f"[SectorCollector] US targets: {len(symbols)} stocks")
+        logger.info(f"[SectorCollector] US targets: {len(df)} stocks")
 
-        results: dict[str, str] = {}
-        failed: list[str] = []
+        sector_map = self._nasdaq.fetch_all_sectors()
+        if not sector_map:
+            logger.warning("[SectorCollector] NASDAQ Screener returned empty")
+            return 0
 
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            futures = {pool.submit(self._yfinance.fetch_sector, s): s for s in symbols}
-            for future in as_completed(futures):
-                sym = futures[future]
-                sector = future.result()
-                if sector:
-                    results[sym] = sector
-                else:
-                    failed.append(sym)
-
-        if failed:
-            logger.info(f"[SectorCollector] yfinance missed {len(failed)}, trying Finnhub")
-            for sym in failed:
-                sector = self._finnhub.fetch_sector(sym)
-                if sector:
-                    results[sym] = sector
-
-        df["sector"] = df["symbol"].map(results)
+        df["sector"] = df["symbol"].map(sector_map)
         matched = df.dropna(subset=["sector"])
 
         if matched.empty:

@@ -4,13 +4,9 @@ from decimal import Decimal, InvalidOperation
 from app.schema import Market
 from app.db import get_connection, StockRepository, DailyPriceRepository
 from app.collectors.clients import PykrxClient
+from app.collectors.utils.market_groups import MARKET_TO_PYKRX
 
 logger = logging.getLogger(__name__)
-
-MARKET_TO_PYKRX = {
-    Market.KR_KOSPI: "KOSPI",
-    Market.KR_KOSDAQ: "KOSDAQ",
-}
 
 
 class KrDailyPriceCollector:

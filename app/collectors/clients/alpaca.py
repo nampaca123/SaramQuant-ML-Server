@@ -1,9 +1,10 @@
 import logging
-import time
 from datetime import date, datetime
 from alpaca.data.historical.stock import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
+
+from app.collectors.utils.throttle import Throttle
 
 logger = logging.getLogger(__name__)
 
@@ -11,17 +12,10 @@ logger = logging.getLogger(__name__)
 class AlpacaClient:
     BATCH_SIZE = 50
     CALLS_PER_MIN = 200
-    CALL_INTERVAL = 60.0 / CALLS_PER_MIN
 
     def __init__(self, api_key: str, secret_key: str):
         self._client = StockHistoricalDataClient(api_key, secret_key)
-        self._last_call_time = 0.0
-
-    def _throttle(self) -> None:
-        elapsed = time.time() - self._last_call_time
-        if elapsed < self.CALL_INTERVAL:
-            time.sleep(self.CALL_INTERVAL - elapsed)
-        self._last_call_time = time.time()
+        self._throttle = Throttle(min_interval=60.0 / self.CALLS_PER_MIN)
 
     def fetch_daily_bars(
         self, symbols: list[str], start: date, end: date
@@ -46,7 +40,7 @@ class AlpacaClient:
     def _fetch_batch(
         self, symbols: list[str], start: date, end: date
     ) -> dict[str, list[dict]]:
-        self._throttle()
+        self._throttle.wait()
 
         request = StockBarsRequest(
             symbol_or_symbols=symbols,

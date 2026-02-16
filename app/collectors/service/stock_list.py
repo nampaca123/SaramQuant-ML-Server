@@ -6,6 +6,7 @@ from requests.exceptions import RequestException
 from app.schema import Market, StockInfo
 from app.db import get_connection, StockRepository
 from app.utils import retry_with_backoff
+from app.collectors.utils.skip_rules import is_skippable_kr_name, is_valid_us_symbol
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +78,7 @@ class StockListCollector:
             symbol = line[0:9].decode("cp949", errors="ignore").strip()
             name = line[21:61].decode("cp949", errors="ignore").strip()
 
-            if not symbol or not symbol.isdigit() or not name or "스팩" in name:
+            if not symbol or not symbol.isdigit() or not name or is_skippable_kr_name(name):
                 continue
 
             stocks.append(StockInfo(symbol=symbol, name=name, market=market))
@@ -98,7 +99,7 @@ class StockListCollector:
             symbol = parts[4].strip()
             name = parts[7].strip()
 
-            if not symbol or not name or len(symbol) > 5 or not symbol.isalpha():
+            if not name or not is_valid_us_symbol(symbol):
                 continue
 
             stocks.append(StockInfo(symbol=symbol, name=name, market=market))

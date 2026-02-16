@@ -1,6 +1,5 @@
 import io
 import logging
-import time
 import zipfile
 import xml.etree.ElementTree as ET
 
@@ -8,6 +7,7 @@ import requests
 
 from app.schema import ReportType
 from app.utils import retry_with_backoff
+from app.collectors.utils.throttle import Throttle
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +18,6 @@ REPORT_CODES = {
     ReportType.FY: "11011",
 }
 
-MIN_REQUEST_INTERVAL = 0.06
 MULTI_BATCH_SIZE = 100
 
 
@@ -28,16 +27,10 @@ class DartClient:
     def __init__(self, api_key: str):
         self._api_key = api_key
         self._session = requests.Session()
-        self._last_request_at: float = 0.0
-
-    def _throttle(self) -> None:
-        elapsed = time.monotonic() - self._last_request_at
-        if elapsed < MIN_REQUEST_INTERVAL:
-            time.sleep(MIN_REQUEST_INTERVAL - elapsed)
-        self._last_request_at = time.monotonic()
+        self._throttle = Throttle(min_interval=0.06)
 
     def fetch_corp_codes(self) -> dict[str, str]:
-        self._throttle()
+        self._throttle.wait()
         resp = self._session.get(
             f"{self.BASE_URL}/corpCode.xml",
             params={"crtfc_key": self._api_key},
@@ -66,7 +59,7 @@ class DartClient:
         bsns_year: str,
         reprt_code: str,
     ) -> list[dict]:
-        self._throttle()
+        self._throttle.wait()
         resp = self._session.get(
             f"{self.BASE_URL}/fnlttMultiAcnt.json",
             params={

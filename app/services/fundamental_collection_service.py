@@ -4,7 +4,7 @@ import time
 
 import requests
 
-from app.collectors.kr_financial_statement import KrFinancialStatementCollector
+from app.collectors.service.kr_financial_statement import KrFinancialStatementCollector
 
 logger = logging.getLogger(__name__)
 

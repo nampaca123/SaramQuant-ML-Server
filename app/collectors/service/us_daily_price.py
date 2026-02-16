@@ -5,10 +5,9 @@ from decimal import Decimal, InvalidOperation
 from app.schema import Market
 from app.db import get_connection, StockRepository, DailyPriceRepository
 from app.collectors.clients import AlpacaClient
+from app.collectors.utils.market_groups import US_MARKETS
 
 logger = logging.getLogger(__name__)
-
-US_MARKETS = (Market.US_NYSE, Market.US_NASDAQ)
 
 
 class UsDailyPriceCollector:
