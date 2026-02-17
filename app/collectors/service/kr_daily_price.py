@@ -54,8 +54,10 @@ class KrDailyPriceCollector:
             if df.empty:
                 continue
 
-            trading_days += 1
-            total += self._upsert_day(df, d, stock_map)
+            count = self._upsert_day(df, d, stock_map)
+            if count > 0:
+                trading_days += 1
+            total += count
 
             if i % 10 == 0 or i == len(dates):
                 logger.info(f"[KrDailyPrice] {market.value}: {i}/{len(dates)} days done")
