@@ -75,9 +75,14 @@ def build_design_matrix(
     """
     Build full design matrix X = [market(1) | styles(S) | industries(I)].
     Only includes rows where all style factors are non-NaN.
+    Drops zero-variance industry columns to prevent singular KKT matrix.
     """
     market_col = pd.DataFrame(
         {"market": 1.0}, index=style_exposures.index
     )
     X = pd.concat([market_col, style_exposures, industry_dummies], axis=1)
-    return X.dropna()
+    X = X.dropna()
+    zero_cols = X.columns[(X == 0).all()]
+    if len(zero_cols) > 0:
+        X = X.drop(columns=zero_cols)
+    return X
