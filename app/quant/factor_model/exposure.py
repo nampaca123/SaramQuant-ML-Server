@@ -29,9 +29,14 @@ def compute_exposures(
     """
     exposures = pd.DataFrame(index=stock_ids)
 
+    # ensure float64 dtype
+    close_prices = close_prices.astype(float)
+    shares_outstanding = shares_outstanding.astype(float)
+    pbr = pbr.astype(float)
+
     # raw values
     mcap = shares_outstanding * close_prices
-    exposures["size"] = np.log(mcap.replace(0, np.nan))
+    exposures["size"] = np.log(mcap.where(mcap > 0, np.nan))
     exposures["value"] = (1.0 / pbr).replace([np.inf, -np.inf], np.nan)
     exposures["momentum"] = returns_252 - returns_21
     exposures["volatility"] = ewm_vol
