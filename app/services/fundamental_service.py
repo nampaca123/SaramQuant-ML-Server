@@ -1,3 +1,4 @@
+import logging
 from datetime import date
 
 from app.schema import DataCoverage, FinancialStatement, ReportType
@@ -7,10 +8,55 @@ from app.quant.fundamentals import (
     debt_ratio,
 )
 
+logger = logging.getLogger(__name__)
+
 _Q_ORDER = [ReportType.Q1, ReportType.Q2, ReportType.Q3]
+
+_MIN_SHARES = 100
+_MAX_SHARES = 50_000_000_000
+
+_BOUNDS: dict[str, tuple[float, float]] = {
+    "per": (-1000, 1000),
+    "pbr": (0, 200),
+    "roe": (-10, 10),
+    "debt_ratio": (0, 100),
+    "operating_margin": (-100, 100),
+}
+
+_stats = {"shares_sanitized": 0, "clamped": 0, "negative_equity": 0}
+
+
+def _sanitize_shares(shares: int | None, stock_id: int) -> int | None:
+    if shares is None:
+        return None
+    if not (_MIN_SHARES <= shares <= _MAX_SHARES):
+        logger.warning(f"[Fundamental] stock_id={stock_id}: shares={shares} out of range, set to None")
+        _stats["shares_sanitized"] += 1
+        return None
+    return shares
+
+
+def _clamp(val: float | None, key: str, stock_id: int) -> float | None:
+    if val is None:
+        return None
+    lo, hi = _BOUNDS[key]
+    if not (lo <= val <= hi):
+        logger.warning(f"[Fundamental] stock_id={stock_id}: {key}={val:.4f} out of bounds ({lo}, {hi})")
+        _stats["clamped"] += 1
+        return None
+    return round(val, 4)
 
 
 class FundamentalService:
+    @staticmethod
+    def reset_stats():
+        for k in _stats:
+            _stats[k] = 0
+
+    @staticmethod
+    def get_stats() -> dict[str, int]:
+        return dict(_stats)
+
     @staticmethod
     def compute(
         stock_id: int,
@@ -23,7 +69,12 @@ class FundamentalService:
         latest = statements[0]
         bs_equity = _to_float(latest.total_equity)
         bs_liabilities = _to_float(latest.total_liabilities)
-        shares = latest.shares_outstanding
+        shares = _sanitize_shares(latest.shares_outstanding, stock_id)
+
+        negative_equity = bs_equity is not None and bs_equity < 0
+        if negative_equity:
+            logger.warning(f"[Fundamental] stock_id={stock_id}: negative equity={bs_equity}")
+            _stats["negative_equity"] += 1
 
         ttm = FundamentalService._ttm_income(statements)
 
@@ -58,13 +109,13 @@ class FundamentalService:
         return (
             stock_id,
             date.today(),
-            _round(per_val),
-            _round(pbr_val),
+            _clamp(per_val, "per", stock_id),
+            _clamp(pbr_val, "pbr", stock_id),
             _round(eps_val),
             _round(bps_val),
-            _round(roe_val),
-            _round(debt_val),
-            _round(op_margin_val),
+            _clamp(roe_val, "roe", stock_id),
+            _clamp(debt_val, "debt_ratio", stock_id),
+            _clamp(op_margin_val, "operating_margin", stock_id),
             coverage.value,
         )
 

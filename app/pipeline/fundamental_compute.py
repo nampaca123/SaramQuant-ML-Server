@@ -23,12 +23,19 @@ class FundamentalComputeEngine:
         markets: list[Market],
         price_maps: dict[Market, dict[int, list[tuple]]] | None = None,
     ) -> int:
+        FundamentalService.reset_stats()
         all_rows: list[tuple] = []
 
         for market in markets:
             pm = price_maps.get(market) if price_maps else None
             rows = self._process_market(market, pm)
             all_rows.extend(rows)
+
+        stats = FundamentalService.get_stats()
+        logger.info(
+            f"[FundCompute] Quality: {stats['shares_sanitized']} shares_sanitized, "
+            f"{stats['clamped']} clamped, {stats['negative_equity']} negative_equity"
+        )
 
         deleted = self._fund_repo.delete_by_markets(markets)
         logger.info(f"[FundCompute] Deleted {deleted} old fundamental rows")

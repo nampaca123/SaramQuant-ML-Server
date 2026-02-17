@@ -1,6 +1,7 @@
 import logging
 from datetime import date, datetime
 from alpaca.data.historical.stock import StockHistoricalDataClient
+from alpaca.data.enums import DataFeed
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
 
@@ -47,6 +48,7 @@ class AlpacaClient:
             timeframe=TimeFrame.Day,
             start=datetime.combine(start, datetime.min.time()),
             end=datetime.combine(end, datetime.min.time()),
+            feed=DataFeed.IEX,
         )
 
         try:
