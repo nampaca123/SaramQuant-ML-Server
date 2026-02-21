@@ -6,6 +6,7 @@ from .repositories import (
     FinancialStatementRepository,
     FundamentalRepository,
     IndicatorRepository,
+    RiskBadgeRepository,
     RiskFreeRateRepository,
     StockRepository,
 )
@@ -19,6 +20,7 @@ __all__ = [
     "FinancialStatementRepository",
     "FundamentalRepository",
     "IndicatorRepository",
+    "RiskBadgeRepository",
     "RiskFreeRateRepository",
     "StockRepository",
 ]

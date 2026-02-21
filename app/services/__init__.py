@@ -4,6 +4,7 @@ from .fundamental_service import FundamentalService
 from .indicator_service import IndicatorService
 from .integrity_check_service import IntegrityCheckService
 from .price_collection_service import PriceCollectionService
+from .risk_badge_service import RiskBadgeService
 from .sector_aggregate_service import SectorAggregateService
 
 __all__ = [
@@ -13,5 +14,6 @@ __all__ = [
     "IndicatorService",
     "IntegrityCheckService",
     "PriceCollectionService",
+    "RiskBadgeService",
     "SectorAggregateService",
 ]

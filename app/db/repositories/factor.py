@@ -2,7 +2,7 @@ import json
 from datetime import date
 
 from psycopg2.extensions import connection
-from psycopg2.extras import execute_values
+from psycopg2.extras import execute_values, RealDictCursor
 
 from app.schema import Market
 
@@ -117,6 +117,81 @@ class FactorRepository:
             if row is None:
                 return None
             return row[0], row[1]
+
+    # ── risk badge helpers ──
+
+    def get_volatility_z_by_stock(self, stock_id: int, market: Market) -> float | None:
+        query = """
+            SELECT volatility_z FROM factor_exposures
+            WHERE stock_id = %s
+              AND date = (SELECT MAX(date) FROM factor_exposures fe
+                          JOIN stocks s ON s.id = fe.stock_id WHERE s.market = %s)
+        """
+        with self._conn.cursor() as cur:
+            cur.execute(query, (stock_id, market.value))
+            row = cur.fetchone()
+            return float(row[0]) if row and row[0] is not None else None
+
+    def get_all_exposures_by_market(self, market: Market) -> dict[int, float]:
+        """Returns {stock_id: volatility_z} for the latest date."""
+        query = """
+            SELECT fe.stock_id, fe.volatility_z
+            FROM factor_exposures fe
+            JOIN stocks s ON s.id = fe.stock_id
+            WHERE s.market = %s AND s.is_active = true
+              AND fe.date = (SELECT MAX(date) FROM factor_exposures fe2
+                             JOIN stocks s2 ON s2.id = fe2.stock_id WHERE s2.market = %s)
+        """
+        with self._conn.cursor() as cur:
+            cur.execute(query, (market.value, market.value))
+            return {
+                row[0]: float(row[1]) if row[1] is not None else None
+                for row in cur.fetchall()
+            }
+
+    def get_all_sector_aggregates(self, market: Market) -> dict[str, dict]:
+        """Returns {sector: {stock_count, median_per, ...}} for the latest date."""
+        query = """
+            SELECT * FROM sector_aggregates
+            WHERE market = %s
+              AND date = (SELECT MAX(date) FROM sector_aggregates WHERE market = %s)
+        """
+        with self._conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(query, (market.value, market.value))
+            return {row["sector"]: dict(row) for row in cur.fetchall()}
+
+    def get_sector_aggregate_single(self, market: Market, sector: str) -> dict | None:
+        query = """
+            SELECT * FROM sector_aggregates
+            WHERE market = %s AND sector = %s
+            ORDER BY date DESC LIMIT 1
+        """
+        with self._conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(query, (market.value, sector))
+            row = cur.fetchone()
+            return dict(row) if row else None
+
+    def get_market_aggregate(self, market: Market) -> dict | None:
+        """Market-wide medians computed via SQL aggregation."""
+        query = """
+            SELECT
+                COUNT(*) as stock_count,
+                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY f.per) as median_per,
+                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY f.pbr) as median_pbr,
+                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY f.roe) as median_roe,
+                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY f.operating_margin) as median_operating_margin,
+                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY f.debt_ratio) as median_debt_ratio
+            FROM stocks s
+            JOIN stock_fundamentals f ON s.id = f.stock_id
+            WHERE s.market = %s AND s.is_active = true
+              AND f.data_coverage NOT IN ('NO_FS', 'INSUFFICIENT')
+        """
+        with self._conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(query, (market.value,))
+            row = cur.fetchone()
+            if not row or row["stock_count"] == 0:
+                return None
+            return dict(row)
 
     # ── sector_aggregates ──
 

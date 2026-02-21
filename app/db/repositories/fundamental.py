@@ -1,5 +1,5 @@
 from psycopg2.extensions import connection
-from psycopg2.extras import execute_values
+from psycopg2.extras import execute_values, RealDictCursor
 
 from app.schema import Market
 
@@ -59,3 +59,27 @@ class FundamentalRepository:
         with self._conn.cursor() as cur:
             cur.execute(query, (stock_ids,))
             return cur.fetchall()
+
+    def get_latest_by_stock(self, stock_id: int) -> dict | None:
+        query = """
+            SELECT sf.*, s.sector, s.market
+            FROM stock_fundamentals sf
+            JOIN stocks s ON s.id = sf.stock_id
+            WHERE sf.stock_id = %s
+            ORDER BY sf.date DESC LIMIT 1
+        """
+        with self._conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(query, (stock_id,))
+            row = cur.fetchone()
+            return dict(row) if row else None
+
+    def get_all_by_market(self, market: Market) -> dict[int, dict]:
+        query = """
+            SELECT sf.*, s.sector, s.market, s.symbol
+            FROM stock_fundamentals sf
+            JOIN stocks s ON s.id = sf.stock_id
+            WHERE s.market = %s AND s.is_active = true
+        """
+        with self._conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(query, (market.value,))
+            return {row["stock_id"]: dict(row) for row in cur.fetchall()}

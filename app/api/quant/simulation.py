@@ -1,9 +1,8 @@
 from flask import Blueprint, request, jsonify
-from app.api import API_PREFIX
 from app.schema import Market
 from app.services.simulation_service import SimulationService
 
-simulation_bp = Blueprint("simulation", __name__, url_prefix=API_PREFIX)
+simulation_bp = Blueprint("simulation", __name__, url_prefix="/internal")
 
 MARKET_MAP = {
     "KR_KOSPI": Market.KR_KOSPI,

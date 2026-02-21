@@ -328,6 +328,24 @@ end
 $do$;
 
 -- ============================================================
+-- Risk Badge cache table
+-- ============================================================
+
+create table if not exists public.risk_badges (
+  stock_id     bigint primary key references public.stocks(id) on delete cascade,
+  market       public.market_type not null,
+  date         date not null,
+  summary_tier varchar(10) not null,
+  dimensions   jsonb not null,
+  updated_at   timestamptz not null default now()
+);
+
+create index if not exists idx_risk_badges_market_tier
+  on public.risk_badges (market, summary_tier);
+create index if not exists idx_risk_badges_date
+  on public.risk_badges (date desc);
+
+-- ============================================================
 -- User / Auth tables
 -- ============================================================
 

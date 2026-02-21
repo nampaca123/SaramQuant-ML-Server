@@ -1,5 +1,5 @@
 from psycopg2.extensions import connection
-from psycopg2.extras import execute_values
+from psycopg2.extras import execute_values, RealDictCursor
 from app.schema import Market
 
 
@@ -36,9 +36,33 @@ class IndicatorRepository:
     def insert_batch(self, rows: list[tuple]) -> int:
         if not rows:
             return 0
-        placeholders = ", ".join(["%s"] * len(COLUMNS))
         col_names = ", ".join(COLUMNS)
         query = f"INSERT INTO stock_indicators ({col_names}) VALUES %s"
         with self._conn.cursor() as cur:
             execute_values(cur, query, rows)
             return cur.rowcount
+
+    def get_latest_by_stock(self, stock_id: int) -> dict | None:
+        query = """
+            SELECT si.*, dp.close
+            FROM stock_indicators si
+            JOIN daily_prices dp ON dp.stock_id = si.stock_id AND dp.date = si.date
+            WHERE si.stock_id = %s
+            ORDER BY si.date DESC LIMIT 1
+        """
+        with self._conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(query, (stock_id,))
+            row = cur.fetchone()
+            return dict(row) if row else None
+
+    def get_all_by_market(self, market: Market) -> dict[int, dict]:
+        query = """
+            SELECT si.*, dp.close, s.sector
+            FROM stock_indicators si
+            JOIN daily_prices dp ON dp.stock_id = si.stock_id AND dp.date = si.date
+            JOIN stocks s ON s.id = si.stock_id
+            WHERE s.market = %s AND s.is_active = true
+        """
+        with self._conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(query, (market.value,))
+            return {row["stock_id"]: dict(row) for row in cur.fetchall()}

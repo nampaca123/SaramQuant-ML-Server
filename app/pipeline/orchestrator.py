@@ -80,6 +80,7 @@ class PipelineOrchestrator:
             self._safe_step("indicators", self._compute_indicators, region, price_maps)
         if fund_ok:
             self._safe_step("sector_agg", self._compute_sector_aggregates, region)
+            self._safe_step("risk_badges", self._compute_risk_badges, region)
         self._run_integrity_check(region)
 
     # ── progressive deactivation (single transaction) ──
@@ -172,6 +173,17 @@ class PipelineOrchestrator:
             engine = SectorAggregateComputeEngine(conn)
             count = engine.run(markets)
             logger.info(f"[Pipeline] Computed {count} sector aggregate rows")
+
+    def _compute_risk_badges(self, region: str) -> None:
+        markets = REGION_CONFIG[region]["markets"]
+        with get_connection() as conn:
+            from app.services.risk_badge_service import RiskBadgeService
+            from app.db.repositories.risk_badge import RiskBadgeRepository
+            service = RiskBadgeService(conn)
+            for market in markets:
+                badges = service.compute_batch(market)
+                RiskBadgeRepository(conn).upsert_batch(badges)
+            conn.commit()
 
     def _run_integrity_check(self, region: str) -> None:
         markets = REGION_CONFIG[region]["markets"]
