@@ -9,15 +9,14 @@ saramquant-calc-server/
 │
 ├── app/
 │   ├── api/
-│   │   ├── quant/
-│   │   │   └── simulation.py           # 몬테카를로 시뮬레이션 API
-│   │   └── portfolio/
-│   │       ├── analysis.py             # 리스크 점수, 리스크 분해, 분산도
-│   │       ├── simulation.py           # 포트폴리오 시뮬레이션
-│   │       └── price_lookup.py         # 특정 날짜 종가/환율 조회
+│   │   ├── portfolio/
+│   │   │   ├── analysis.py             # 리스크 점수, 리스크 분해, 분산도
+│   │   │   ├── price_lookup.py         # 날짜별 종가 + 환율 조회
+│   │   │   └── simulation.py           # 포트폴리오 몬테카를로 시뮬레이션
+│   │   └── quant/
+│   │       └── simulation.py           # 종목 몬테카를로 시뮬레이션
 │   │
 │   ├── collectors/
-│   │   ├── __init__.py
 │   │   ├── clients/
 │   │   │   ├── alpaca.py
 │   │   │   ├── dart.py
@@ -29,44 +28,86 @@ saramquant-calc-server/
 │   │   │   └── yfinance.py
 │   │   ├── service/
 │   │   │   ├── benchmark_price.py
+│   │   │   ├── exchange_rate.py        # 환율 수집 (KRW/USD)
 │   │   │   ├── kr_daily_price.py
 │   │   │   ├── kr_financial_statement.py
 │   │   │   ├── risk_free_rate.py
-│   │   │   ├── sector_classification.py
-│   │   │   ├── us_daily_price.py
-│   │   │   └── us_stock_list.py
-│   │   └── pipeline.py
+│   │   │   ├── sector.py               # KR/US 섹터 수집 (통합)
+│   │   │   ├── stock_list.py           # KR/US 종목 목록 수집 (통합)
+│   │   │   └── us_daily_price.py
+│   │   └── utils/
+│   │       ├── market_groups.py
+│   │       ├── skip_rules.py
+│   │       └── throttle.py
+│   │
+│   ├── db/
+│   │   ├── connection.py
+│   │   └── repositories/
+│   │       ├── benchmark.py
+│   │       ├── daily_price.py
+│   │       ├── exchange_rate.py
+│   │       ├── factor.py
+│   │       ├── financial_statement.py
+│   │       ├── fundamental.py
+│   │       ├── indicator.py
+│   │       ├── portfolio.py
+│   │       ├── risk_badge.py
+│   │       ├── risk_free_rate.py
+│   │       └── stock.py
+│   │
+│   ├── pipeline/
+│   │   ├── __main__.py                 # CLI 진입점
+│   │   ├── orchestrator.py             # 파이프라인 오케스트레이터
+│   │   ├── factor_compute.py
+│   │   ├── fundamental_compute.py
+│   │   ├── indicator_compute.py
+│   │   ├── integrity_check.py
+│   │   └── sector_aggregate_compute.py
 │   │
 │   ├── quant/
-│   │   ├── indicator/
-│   │   │   ├── technical.py
-│   │   │   ├── fundamental.py
-│   │   │   ├── factor_model.py
-│   │   │   └── sector_aggregate.py
+│   │   ├── factor_model/
+│   │   │   ├── beta.py
+│   │   │   ├── covariance.py
+│   │   │   ├── exposure.py
+│   │   │   ├── normalize.py
+│   │   │   └── regression.py
+│   │   ├── fundamentals/
+│   │   │   ├── profitability.py
+│   │   │   ├── stability.py
+│   │   │   └── valuation.py
+│   │   ├── indicators/
+│   │   │   ├── momentum.py
+│   │   │   ├── moving_average.py
+│   │   │   ├── risk.py
+│   │   │   ├── trend.py
+│   │   │   ├── volatility.py
+│   │   │   └── volume.py
+│   │   ├── portfolio/
+│   │   │   ├── diversification.py
+│   │   │   ├── hypothetical_returns.py
+│   │   │   ├── portfolio_metrics.py
+│   │   │   ├── portfolio_risk_score.py
+│   │   │   └── risk_contribution.py
 │   │   ├── risk_badge/
-│   │   │   ├── badge_engine.py
-│   │   │   ├── dimension_engines/
-│   │   │   │   ├── price_heat.py
-│   │   │   │   ├── volatility.py
-│   │   │   │   ├── trend.py
-│   │   │   │   ├── company_health.py
-│   │   │   │   └── valuation.py
-│   │   │   └── summary.py
-│   │   └── portfolio/
-│   │       ├── risk_score.py
-│   │       ├── risk_decomposition.py
-│   │       └── diversification.py
+│   │   │   ├── badge_scoring.py
+│   │   │   ├── badge_types.py
+│   │   │   ├── composite_badge.py
+│   │   │   ├── dimension_company_health.py
+│   │   │   ├── dimension_price_heat.py
+│   │   │   ├── dimension_trend.py
+│   │   │   ├── dimension_valuation.py
+│   │   │   └── dimension_volatility.py
+│   │   └── simulation/
+│   │       ├── monte_carlo.py
+│   │       ├── path_generator.py
+│   │       └── portfolio_path_generator.py
 │   │
-│   ├── services/
-│   │   ├── indicator_compute_service.py
-│   │   ├── fundamental_compute_service.py
-│   │   ├── factor_compute_service.py
-│   │   ├── sector_aggregate_compute_service.py
-│   │   └── risk_badge_compute_service.py
-│   │
-│   ├── pipeline.py
-│   │
-│   ├── models/
+│   ├── schema/
+│   │   ├── dto/
+│   │   │   ├── financial_statement.py
+│   │   │   ├── price.py
+│   │   │   ├── risk.py
+│   │   │   └── stock.py
 │   │   ├── enums/
 │   │   │   ├── benchmark.py
 │   │   │   ├── country.py
@@ -75,6 +116,25 @@ saramquant-calc-server/
 │   │   │   ├── market.py
 │   │   │   ├── maturity.py
 │   │   │   └── report_type.py
+│   │   └── data_sources/
+│   │       ├── alpaca.py
+│   │       ├── kis.py
+│   │       ├── pykrx.py
+│   │       └── yfinance.py
+│   │
+│   ├── services/
+│   │   ├── factor_model_service.py
+│   │   ├── fundamental_collection_service.py
+│   │   ├── fundamental_service.py
+│   │   ├── historical_price_lookup.py
+│   │   ├── indicator_service.py
+│   │   ├── integrity_check_service.py
+│   │   ├── portfolio_analysis_service.py
+│   │   ├── portfolio_simulation_service.py
+│   │   ├── price_collection_service.py
+│   │   ├── risk_badge_service.py
+│   │   ├── sector_aggregate_service.py
+│   │   └── simulation_service.py
 │   │
 │   └── utils/
 │       ├── quant/
@@ -85,17 +145,21 @@ saramquant-calc-server/
 │           └── retry.py
 │
 ├── docs/
-│   └── structure/
-│       ├── fundamental-pipeline-story.md
-│       ├── indicator-optimization-story.md
-│       ├── multi-factor-risk-model-story.md
-│       ├── risk_badge_system.md
-│       ├── sector_classification.md
-│       ├── saramquant_directory_structure.md
-│       ├── saramquant_general_plan.md
-│       ├── issues-2026-02-16.md
-│       ├── test-kr-workflow-initial-2026-02-16.md
-│       └── test-us-workflow-initial-2026-02-16.md
+│   ├── structure/
+│   │   ├── portfolio_system.md
+│   │   ├── risk_badge_system.md
+│   │   ├── saramquant_directory_structure.md
+│   │   └── saramquant_general_plan.md
+│   ├── problem-solution/
+│   │   ├── fundamental-pipeline-story.md
+│   │   ├── indicator-optimization-story.md
+│   │   ├── issues-2026-02-16.md
+│   │   └── multi-factor-risk-model-story.md
+│   └── test-results/
+│       └── *.md
+│
+├── logs/
+│   └── pipeline.log
 │
 └── tests/
     └── data_source_test/

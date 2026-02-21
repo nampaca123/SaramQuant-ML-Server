@@ -120,13 +120,12 @@ KIS에서 제공하는 마스터 파일. 인증 불필요, 매일 자동 업데�
 KR과 US를 독립된 파이프라인으로 분리하여, 각 시장의 장 마감 시점에 맞춰 실행한다.
 
 ```
-python -m app.pipeline kr      # KR 일일 (수집 + 지표 + 펀더멘털)
-python -m app.pipeline us      # US 일일 (수집 + 지표 + 펀더멘털)
-python -m app.pipeline all     # KR + US 순차 실행
-python -m app.pipeline kr-fs   # KR 재무제표 수집만
-python -m app.pipeline us-fs   # US 재무제표 수집만 (마이크로서비스 트리거)
-python -m app.pipeline full    # 전체 (일일 + 재무제표 + 펀더멘털 재계산)
-python -m app.pipeline sectors # 섹터 수집만 (수동 실행/디버깅용)
+python -m app.pipeline kr         # KR 일일 (수집 + 지표 + 펀더멘털 + 리스크뱃지)
+python -m app.pipeline us         # US 일일 (수집 + 지표 + 펀더멘털 + 리스크뱃지)
+python -m app.pipeline kr-initial # KR 초기화 (수집 + 재무제표 + 전체 계산)
+python -m app.pipeline us-initial # US 초기화 (수집 + 재무제표 + 전체 계산)
+python -m app.pipeline kr-fs      # KR 재무제표 수집 + 펀더멘털 재계산
+python -m app.pipeline us-fs      # US 재무제표 수집 + 펀더멘털 재계산 (마이크로서비스 트리거)
 ```
 
 ### 파이프라인 흐름
@@ -141,9 +140,15 @@ python -m app.pipeline sectors # 섹터 수집만 (수동 실행/디버깅용)
 │      ├──▶ pykrx 업종 인덱스 → stocks.sector 갱신           │
 │      ├──▶ pykrx → daily_prices 저장                        │
 │      ├──▶ pykrx → benchmark_daily_prices 저장              │
-│      └──▶ ECOS API → risk_free_rates 저장                  │
+│      ├──▶ ECOS API → risk_free_rates 저장                  │
+│      └──▶ 환율 API → exchange_rates 저장 (KRW/USD)         │
 │                                                             │
-│  [Deactivate] 가격 없는 종목 is_active=false               │
+│  [Progressive Deactivate]                                   │
+│      ├──▶ 재상장 종목 is_active=true 복원                  │
+│      ├──▶ 가격 없는 종목 is_active=false                   │
+│      ├──▶ 섹터 없는 종목 is_active=false                   │
+│      └──▶ 재무제표 없는 종목 is_active=false               │
+│           (10% 미만 활성 시 safety check → 중단)           │
 │                                                             │
 │  [Compute Fundamentals]                                     │
 │      └──▶ PER, PBR, EPS, BPS, ROE, 부채비율, 영업이익률    │
@@ -158,6 +163,8 @@ python -m app.pipeline sectors # 섹터 수집만 (수동 실행/디버깅용)
 │      └──▶ 이동평균, RSI, MACD 등 23개 지표                 │
 │                                                             │
 │  [Sector Aggregates] 섹터별 중위수 PER, PBR, ROE 등        │
+│                                                             │
+│  [Compute Risk Badges] → risk_badges 저장                  │
 │                                                             │
 │  [Integrity Check] 데이터 품질 보고 (읽기 전용)            │
 │                                                             │
@@ -175,7 +182,12 @@ python -m app.pipeline sectors # 섹터 수집만 (수동 실행/디버깅용)
 │      ├──▶ yfinance → benchmark_daily_prices 저장           │
 │      └──▶ FRED API → risk_free_rates 저장                  │
 │                                                             │
-│  [Deactivate] 가격 없는 종목 is_active=false               │
+│  [Progressive Deactivate]                                   │
+│      ├──▶ 재상장 종목 is_active=true 복원                  │
+│      ├──▶ 가격 없는 종목 is_active=false                   │
+│      ├──▶ 섹터 없는 종목 is_active=false                   │
+│      └──▶ 재무제표 없는 종목 is_active=false               │
+│           (10% 미만 활성 시 safety check → 중단)           │
 │                                                             │
 │  [Compute Fundamentals]                                     │
 │      └──▶ PER, PBR, EPS, BPS, ROE, 부채비율, 영업이익률    │
@@ -190,6 +202,8 @@ python -m app.pipeline sectors # 섹터 수집만 (수동 실행/디버깅용)
 │      └──▶ 이동평균, RSI, MACD 등 23개 지표                 │
 │                                                             │
 │  [Sector Aggregates] 섹터별 중위수 PER, PBR, ROE 등        │
+│                                                             │
+│  [Compute Risk Badges] → risk_badges 저장                  │
 │                                                             │
 │  [Integrity Check] 데이터 품질 보고 (읽기 전용)            │
 │                                                             │
@@ -346,26 +360,35 @@ python -m app.pipeline sectors # 섹터 수집만 (수동 실행/디버깅용)
 │ median_per .. median_*    │
 └───────────────────────────┘
 
-┌─────────────────┐   ┌───────────────────────────┐
-│   ml_models     │   │  benchmark_daily_prices   │
-├─────────────────┤   ├───────────────────────────┤
-│ id (PK)         │   │ id (PK)                   │
-│ name            │   │ benchmark                 │
-│ market          │   │ date                      │
-│ accuracy        │   │ close                     │
-│ path            │   │ created_at                │
-│ is_active       │   └───────────────────────────┘
-│ created_at      │
-└─────────────────┘   ┌───────────────────────────┐
-                      │    risk_free_rates        │
-                      ├───────────────────────────┤
-                      │ id (PK)                   │
-                      │ country                   │
-                      │ maturity                  │
-                      │ date                      │
-                      │ rate                      │
-                      │ created_at                │
-                      └───────────────────────────┘
+┌───────────────────────────┐   ┌───────────────────────────┐
+│     risk_badges           │   │  benchmark_daily_prices   │
+├───────────────────────────┤   ├───────────────────────────┤
+│ stock_id (PK, FK)         │   │ id (PK)                   │
+│ market                    │   │ benchmark                 │
+│ date                      │   │ date                      │
+│ summary_tier              │   │ close                     │
+│ dimensions (JSONB)        │   │ created_at                │
+│ updated_at                │   └───────────────────────────┘
+└───────────────────────────┘
+                                ┌───────────────────────────┐
+                                │    risk_free_rates        │
+                                ├───────────────────────────┤
+                                │ id (PK)                   │
+                                │ country                   │
+                                │ maturity                  │
+                                │ date                      │
+                                │ rate                      │
+                                │ created_at                │
+                                └───────────────────────────┘
+
+                                ┌───────────────────────────┐
+                                │    exchange_rates         │
+                                ├───────────────────────────┤
+                                │ id (PK)                   │
+                                │ pair (e.g. KRW/USD)       │
+                                │ date                      │
+                                │ rate                      │
+                                └───────────────────────────┘
 ```
 
 ### 테이블 상세
@@ -461,30 +484,16 @@ python -m app.pipeline sectors # 섹터 수집만 (수동 실행/디버깅용)
 | data_coverage | data_coverage_type | FULL, PARTIAL, LOSS, NO_FS, INSUFFICIENT |
 | created_at | TIMESTAMPTZ | 생성일시 |
 
-#### predictions
+#### risk_badges
 
 | 컬럼 | 타입 | 설명 |
 |------|------|------|
-| id | BIGSERIAL | PK |
-| stock_id | BIGINT | FK → stocks.id |
-| date | DATE | 예측 대상일 |
-| direction | direction_type | UP, DOWN |
-| confidence | NUMERIC(5,4) | 신뢰도 (0~1) |
-| actual_direction | direction_type | 실제 결과 (검증 시 업데이트) |
-| is_correct | BOOLEAN | 예측 정확 여부 |
-| created_at | TIMESTAMPTZ | 생성일시 |
-
-#### ml_models
-
-| 컬럼 | 타입 | 설명 |
-|------|------|------|
-| id | BIGSERIAL | PK |
-| name | VARCHAR(50) | 모델명 |
-| market | market_type | 대상 시장 |
-| accuracy | NUMERIC(5,4) | 정확도 |
-| path | VARCHAR(255) | 모델 파일 경로 |
-| is_active | BOOLEAN | 현재 사용 여부 |
-| created_at | TIMESTAMPTZ | 생성일시 |
+| stock_id | BIGINT | PK, FK → stocks.id |
+| market | market_type | KR_KOSPI, KR_KOSDAQ, US_NYSE, US_NASDAQ |
+| date | DATE | 기준일 |
+| summary_tier | VARCHAR(10) | 종합 리스크 등급 (LOW/MID/HIGH 등) |
+| dimensions | JSONB | 5개 차원 점수 (price_heat, volatility, trend, company_health, valuation) |
+| updated_at | TIMESTAMPTZ | 최종 갱신일시 |
 
 #### benchmark_daily_prices
 
@@ -506,6 +515,15 @@ python -m app.pipeline sectors # 섹터 수집만 (수동 실행/디버깅용)
 | date | DATE | 기준일 |
 | rate | NUMERIC(6,4) | 금리 (%) |
 | created_at | TIMESTAMPTZ | 생성일시 |
+
+#### exchange_rates
+
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| id | BIGSERIAL | PK |
+| pair | VARCHAR(7) | 통화쌍 (e.g. KRW/USD) |
+| date | DATE | 기준일 |
+| rate | NUMERIC(12,4) | 환율 |
 
 #### factor_exposures
 
@@ -560,8 +578,8 @@ python -m app.pipeline sectors # 섹터 수집만 (수동 실행/디버깅용)
 
 | 시간 (KST) | 명령어 | 요일 | 설명 |
 |------------|--------|------|------|
-| 18:00 | `python -m app.pipeline kr` | Mon-Fri | KR 수집 + 지표 + 펀더멘털 |
-| 09:00 | `python -m app.pipeline us` | Tue-Sat | US 수집 + 지표 + 펀더멘털 |
+| 18:00 | `python -m app.pipeline kr` | Mon-Fri | KR 수집 + 지표 + 펀더멘털 + 리스크뱃지 |
+| 09:00 | `python -m app.pipeline us` | Tue-Sat | US 수집 + 지표 + 펀더멘털 + 리스크뱃지 |
 
 ### KR 파이프라인 (18:00 KST)
 
@@ -572,12 +590,14 @@ python -m app.pipeline sectors # 섹터 수집만 (수동 실행/디버깅용)
 | 3 | Collect | KR 일봉 수집 | pykrx로 당일 전 종목 OHLCV |
 | 4 | Collect | KR 벤치마크 수집 | pykrx로 KOSPI/KOSDAQ 지수 |
 | 5 | Collect | KR 무위험금리 수집 | ECOS API (91D, 3Y, 10Y) |
-| 6 | Deactivate | 미가격 종목 비활성화 | 가격 없는 종목 is_active=false |
-| 7 | Compute | KR 펀더멘털 계산 | PER, PBR, ROE 등 → stock_fundamentals |
-| 8 | Compute | KR 팩터 모델 | 노출도 → WLS 회귀 → 공분산 → factor_* 테이블 |
-| 9 | Compute | KR 지표 계산 | 팩터 베타 + 23개 지표 → stock_indicators |
-| 10 | Compute | KR 섹터 집계 | 섹터별 중위수 PER, PBR 등 → sector_aggregates |
-| 11 | Check | 무결성 보고 | 데이터 품질 로그 (읽기 전용) |
+| 6 | Collect | 환율 수집 | KRW/USD → exchange_rates |
+| 7 | Deactivate | Progressive 비활성화 | 재상장 복원 → 가격/섹터/재무제표 없는 종목 비활성화 (safety: 10% 미만 시 중단) |
+| 8 | Compute | KR 펀더멘털 계산 | PER, PBR, ROE 등 → stock_fundamentals |
+| 9 | Compute | KR 팩터 모델 | 노출도 → WLS 회귀 → 공분산 → factor_* 테이블 |
+| 10 | Compute | KR 지표 계산 | 팩터 베타 + 23개 지표 → stock_indicators |
+| 11 | Compute | KR 섹터 집계 | 섹터별 중위수 PER, PBR 등 → sector_aggregates |
+| 12 | Compute | KR 리스크뱃지 | 5개 차원 점수 + 종합 tier → risk_badges |
+| 13 | Check | 무결성 보고 | 데이터 품질 로그 (읽기 전용) |
 
 ### US 파이프라인 (09:00 KST)
 
@@ -588,21 +608,22 @@ python -m app.pipeline sectors # 섹터 수집만 (수동 실행/디버깅용)
 | 3 | Collect | US 일봉 수집 | Alpaca API 배치 수집 |
 | 4 | Collect | US 벤치마크 수집 | yfinance로 S&P500/NASDAQ 지수 |
 | 5 | Collect | US 무위험금리 수집 | FRED API (91D, 1Y, 3Y, 10Y) |
-| 6 | Deactivate | 미가격 종목 비활성화 | 가격 없는 종목 is_active=false |
+| 6 | Deactivate | Progressive 비활성화 | 재상장 복원 → 가격/섹터/재무제표 없는 종목 비활성화 (safety: 10% 미만 시 중단) |
 | 7 | Compute | US 펀더멘털 계산 | PER, PBR, ROE 등 → stock_fundamentals |
 | 8 | Compute | US 팩터 모델 | 노출도 → WLS 회귀 → 공분산 → factor_* 테이블 |
 | 9 | Compute | US 지표 계산 | 팩터 베타 + 23개 지표 → stock_indicators |
 | 10 | Compute | US 섹터 집계 | 섹터별 중위수 PER, PBR 등 → sector_aggregates |
-| 11 | Check | 무결성 보고 | 데이터 품질 로그 (읽기 전용) |
+| 11 | Compute | US 리스크뱃지 | 5개 차원 점수 + 종합 tier → risk_badges |
+| 12 | Check | 무결성 보고 | 데이터 품질 로그 (읽기 전용) |
 
-### 개별 수집 (별도 실행)
+### 초기화 / 재무제표 수집 (별도 실행)
 
 | 명령어 | 설명 |
 |--------|------|
-| `python -m app.pipeline kr-fs` | KR 재무제표 수집 (DART API, 로컬) |
-| `python -m app.pipeline us-fs` | US 재무제표 수집 (마이크로서비스에 위임, 폴링 대기) |
-| `python -m app.pipeline sectors` | KR+US 섹터 수집만 (수동 실행/디버깅용) |
-| `python -m app.pipeline full` | 전체 파이프라인 (일일 + 재무제표 + 펀더멘털 재계산) |
+| `python -m app.pipeline kr-initial` | KR 초기화: 수집 + DART 재무제표 + 전체 계산 |
+| `python -m app.pipeline us-initial` | US 초기화: 수집 + EDGAR 재무제표 + 전체 계산 |
+| `python -m app.pipeline kr-fs` | KR 재무제표 수집 (DART API) + 펀더멘털 재계산 |
+| `python -m app.pipeline us-fs` | US 재무제표 수집 (마이크로서비스 위임) + 펀더멘털 재계산 |
 
 ### 스케줄 시간 근거
 
@@ -613,10 +634,10 @@ python -m app.pipeline sectors # 섹터 수집만 (수동 실행/디버깅용)
 
 ```bash
 # KR pipeline: 18:00 KST, Mon-Fri
-0 18 * * 1-5 cd /path/to/saramquant-ml-server && .venv/bin/python -m app.pipeline kr >> logs/pipeline_kr.log 2>&1
+0 18 * * 1-5 cd /path/to/saramquant-calc-server && .venv/bin/python -m app.pipeline kr >> logs/pipeline.log 2>&1
 
 # US pipeline: 09:00 KST, Tue-Sat
-0 9 * * 2-6 cd /path/to/saramquant-ml-server && .venv/bin/python -m app.pipeline us >> logs/pipeline_us.log 2>&1
+0 9 * * 2-6 cd /path/to/saramquant-calc-server && .venv/bin/python -m app.pipeline us >> logs/pipeline.log 2>&1
 ```
 
 ---
@@ -666,10 +687,11 @@ python -m app.pipeline sectors # 섹터 수집만 (수동 실행/디버깅용)
 | POST | `/api/portfolios/{id}/buy` | 매수 |
 | POST | `/api/portfolios/{id}/sell/{holdingId}` | 매도 |
 
-**시뮬레이션**
+**시뮬레이션 / 포트폴리오 분석**
 | Method | Path | 설명 |
 |--------|------|------|
-| GET | `/api/stocks/{symbol}/simulation` | 몬테카를로 시뮬레이션 |
+| GET | `/api/stocks/{symbol}/simulation` | 종목 몬테카를로 시뮬레이션 |
+| POST | `/api/portfolios/{id}/simulation` | 포트폴리오 몬테카를로 시뮬레이션 |
 | POST | `/api/portfolios/{id}/risk-score` | 리스크 점수 |
 | POST | `/api/portfolios/{id}/risk` | 리스크 분해 |
 | POST | `/api/portfolios/{id}/diversification` | 분산 효과 |
@@ -682,13 +704,16 @@ python -m app.pipeline sectors # 섹터 수집만 (수동 실행/디버깅용)
 | POST | `/internal/portfolios/risk` | 공분산 리스크 분해 (MCAR) |
 | POST | `/internal/portfolios/diversification` | HHI, Effective N, 분산효과 비율 |
 | POST | `/internal/portfolios/price-lookup` | 날짜별 종가 + 환율 |
-| GET | `/api/stocks/<symbol>/simulation` | 몬테카를로 시뮬레이션 (GBM/Bootstrap) |
-| GET | `/health` | 헬스 체크 |
+| POST | `/internal/portfolios/<portfolio_id>/simulation` | 포트폴리오 몬테카를로 시뮬레이션 |
+| GET | `/internal/stocks/<symbol>/simulation` | 종목 몬테카를로 시뮬레이션 (GBM/Bootstrap) |
+
+> 시뮬레이션 공통 쿼리 파라미터: `days`, `simulations`, `confidence`, `lookback`, `method`
+> 종목 시뮬레이션 추가 파라미터: `market` (KR_KOSPI, KR_KOSDAQ, US_NYSE, US_NASDAQ)
 
 데이터 수집과 지표/리스크뱃지 일괄 계산은 API가 아닌 CLI 파이프라인으로 처리:
 
 ```bash
-python -m app.pipeline kr|us|all|kr-fs|us-fs|full
+python -m app.pipeline kr|us|kr-initial|us-initial|kr-fs|us-fs
 ```
 
 ### US Financial Statements Collector (Nest.js, 마이크로서비스)
