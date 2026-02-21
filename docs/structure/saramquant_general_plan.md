@@ -629,7 +629,11 @@ python -m app.pipeline sectors # 섹터 수집만 (수동 실행/디버깅용)
 | Method | Path | 설명 |
 |--------|------|------|
 | GET | `/login/oauth2/code/{provider}` | OAuth 콜백 (Google, Kakao) |
+| POST | `/api/auth/signup` | Manual 회원가입 (email + password) |
+| POST | `/api/auth/login` | Manual 로그인 (email + password) |
 | POST | `/api/auth/refresh` | Access Token 재발급 |
+| POST | `/api/auth/logout` | 로그아웃 (현재 세션) |
+| POST | `/api/auth/logout-all` | 전체 세션 로그아웃 |
 | GET | `/api/users/me` | 내 프로필 |
 | PATCH | `/api/users/me` | 프로필 수정 |
 

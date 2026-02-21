@@ -351,8 +351,8 @@ create index if not exists idx_risk_badges_date
 
 do $do$
 begin
-  if not exists (select 1 from pg_type where typname = 'oauth_provider_type') then
-    create type public.oauth_provider_type as enum ('GOOGLE','KAKAO');
+  if not exists (select 1 from pg_type where typname = 'auth_provider_type') then
+    create type public.auth_provider_type as enum ('GOOGLE','KAKAO','MANUAL');
   end if;
 
   if not exists (select 1 from pg_type where typname = 'gender_type') then
@@ -373,8 +373,9 @@ create table if not exists public.users (
   id uuid primary key default gen_random_uuid(),
   email varchar(255) not null unique,
   name varchar(100) not null,
-  provider public.oauth_provider_type not null,
+  provider public.auth_provider_type not null,
   provider_id varchar(255) not null,
+  password_hash varchar(60),
   role public.user_role_type not null default 'STANDARD',
   created_at timestamptz not null default now(),
   last_login_at timestamptz not null default now(),
