@@ -346,6 +346,26 @@ create index if not exists idx_risk_badges_date
   on public.risk_badges (date desc);
 
 -- ============================================================
+-- LLM analysis tables
+-- ============================================================
+
+create table if not exists public.stock_llm_analyses (
+  id bigserial primary key,
+  stock_id bigint not null references public.stocks(id) on delete cascade,
+  date date not null,
+  preset varchar(30) not null,
+  lang varchar(2) not null default 'ko',
+  analysis text not null,
+  model varchar(50) not null,
+  created_at timestamptz not null default now(),
+  constraint stock_llm_analyses_stock_date_preset_lang_uq
+    unique (stock_id, date, preset, lang)
+);
+
+create index if not exists idx_stock_llm_analyses_lookup
+  on public.stock_llm_analyses (stock_id, date, preset, lang);
+
+-- ============================================================
 -- User / Auth tables
 -- ============================================================
 
@@ -432,6 +452,15 @@ begin
   end if;
 end
 $do$;
+
+create table if not exists public.llm_usage_logs (
+  id bigserial primary key,
+  user_id uuid not null references public.users(id) on delete cascade,
+  usage_date date not null,
+  count int not null default 1,
+  constraint llm_usage_logs_user_id_usage_date_uq
+    unique (user_id, usage_date)
+);
 
 -- ============================================================
 -- Portfolio tables
