@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import Callable, Any
 
 from app.db import get_connection, DailyPriceRepository
@@ -13,6 +14,8 @@ from app.pipeline.factor_compute import FactorComputeEngine
 from app.pipeline.sector_aggregate_compute import SectorAggregateComputeEngine
 from app.pipeline.integrity_check import IntegrityCheckEngine
 from app.collectors.service.exchange_rate import ExchangeRateCollector
+from app.log.model.pipeline_metadata import StepResult, PipelineMetadata
+from app.log.service.audit_log_service import log_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -45,14 +48,14 @@ class PipelineOrchestrator:
         logger.info("[Pipeline] Starting KR initial pipeline")
         self._collector.collect_all("kr")
         self._fund_collector.collect_all("kr")
-        self._run_compute_pipeline("kr")
+        self._run_compute_pipeline("kr-initial")
         logger.info("[Pipeline] KR initial pipeline complete")
 
     def run_initial_us(self) -> None:
         logger.info("[Pipeline] Starting US initial pipeline")
         self._collector.collect_all("us")
         self._fund_collector.collect_all("us")
-        self._run_compute_pipeline("us")
+        self._run_compute_pipeline("us-initial")
         logger.info("[Pipeline] US initial pipeline complete")
 
     def run_collect_fs_kr(self) -> None:
@@ -69,22 +72,37 @@ class PipelineOrchestrator:
 
     # ── compute pipeline ──
 
-    def _run_compute_pipeline(self, region: str) -> None:
+    def _run_compute_pipeline(self, command: str) -> None:
+        region = command.replace("-initial", "")
         markets = REGION_CONFIG[region]["markets"]
+        steps: list[StepResult] = []
+        pipeline_start = time.monotonic()
 
         if not self._progressive_deactivate(markets):
             return
 
         price_maps = self._load_prices(markets)
 
-        fund_ok = self._safe_step("fundamentals", self._compute_fundamentals, region, price_maps)
-        factor_ok = self._safe_step("factors", self._compute_factors, region, price_maps) if fund_ok else False
-        if factor_ok:
-            self._safe_step("indicators", self._compute_indicators, region, price_maps)
-        if fund_ok:
-            self._safe_step("sector_agg", self._compute_sector_aggregates, region)
-            self._safe_step("risk_badges", self._compute_risk_badges, region)
+        fund = self._safe_step("fundamentals", self._compute_fundamentals, region, price_maps)
+        steps.append(fund)
+        factor = self._safe_step("factors", self._compute_factors, region, price_maps) if fund.success else StepResult("factors", False, 0, "skipped")
+        steps.append(factor)
+        if factor.success:
+            steps.append(self._safe_step("indicators", self._compute_indicators, region, price_maps))
+        if fund.success:
+            steps.append(self._safe_step("sector_agg", self._compute_sector_aggregates, region))
+            steps.append(self._safe_step("risk_badges", self._compute_risk_badges, region))
         self._run_integrity_check(region)
+
+        meta = PipelineMetadata(
+            command=command,
+            steps=steps,
+            total_duration_ms=int((time.monotonic() - pipeline_start) * 1000),
+        )
+        try:
+            log_pipeline(meta)
+        except Exception:
+            logger.exception("Failed to log pipeline audit")
 
     # ── progressive deactivation (single transaction) ──
 
@@ -139,13 +157,16 @@ class PipelineOrchestrator:
                 price_maps[market] = repo.get_prices_by_market(market, limit_per_stock=300)
         return price_maps
 
-    def _safe_step(self, name: str, fn: Callable[..., Any], *args: Any) -> bool:
+    def _safe_step(self, name: str, fn: Callable[..., Any], *args: Any) -> StepResult:
+        start = time.monotonic()
         try:
             fn(*args)
-            return True
+            duration = int((time.monotonic() - start) * 1000)
+            return StepResult(name=name, success=True, duration_ms=duration)
         except Exception as e:
+            duration = int((time.monotonic() - start) * 1000)
             logger.error(f"[Pipeline] Step '{name}' failed: {e}", exc_info=True)
-            return False
+            return StepResult(name=name, success=False, duration_ms=duration, error=str(e))
 
     # ── individual compute steps ──
 

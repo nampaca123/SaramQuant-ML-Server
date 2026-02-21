@@ -55,9 +55,20 @@ saramquant-calc-server/
 │   │       ├── risk_free_rate.py
 │   │       └── stock.py
 │   │
+│   ├── log/
+│   │   ├── model/
+│   │   │   ├── audit_log.py            # AuditLogEntry dataclass
+│   │   │   └── pipeline_metadata.py    # StepResult, PipelineMetadata dataclass
+│   │   ├── repository/
+│   │   │   └── audit_log_repository.py # psycopg2 INSERT (try-except 격리)
+│   │   ├── service/
+│   │   │   └── audit_log_service.py    # log_api(), log_pipeline()
+│   │   └── middleware/
+│   │       └── audit_middleware.py      # Flask before/after/teardown_request
+│   │
 │   ├── pipeline/
 │   │   ├── __main__.py                 # CLI 진입점
-│   │   ├── orchestrator.py             # 파이프라인 오케스트레이터
+│   │   ├── orchestrator.py             # 파이프라인 오케스트레이터 (StepResult 수집 + 감사 로깅)
 │   │   ├── factor_compute.py
 │   │   ├── fundamental_compute.py
 │   │   ├── indicator_compute.py
