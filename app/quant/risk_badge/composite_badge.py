@@ -15,7 +15,7 @@ Rules:
   6. Otherwise -> worst tier among valid dimensions
 """
 
-from app.quant.risk_badge.dimension import BadgeTier, DimensionResult, Direction
+from app.quant.risk_badge.badge_types import BadgeTier, DimensionResult, Direction
 
 CRITICAL_DIMS = {"company_health", "valuation"}
 SIGNAL_DIMS = {"price_heat", "volatility", "trend"}

@@ -4,8 +4,8 @@ Weights: debt_ratio 40%, ROE 30%, operating_margin 30%
 Uses sector median comparison with market-wide fallback.
 """
 
-from app.quant.risk_badge.dimension import DimensionResult
-from app.quant.risk_badge.scoring import (
+from app.quant.risk_badge.badge_types import DimensionResult
+from app.quant.risk_badge.badge_scoring import (
     clamp_score, safe_ratio, sector_or_market_fallback, to_tier,
 )
 

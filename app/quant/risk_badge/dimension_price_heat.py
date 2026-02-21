@@ -1,7 +1,7 @@
 """Dimension 1: Price Overheating (RSI 60% + Bollinger %B 40%)"""
 
-from app.quant.risk_badge.dimension import BadgeTier, DimensionResult, Direction
-from app.quant.risk_badge.scoring import clamp_score, to_tier
+from app.quant.risk_badge.badge_types import BadgeTier, DimensionResult, Direction
+from app.quant.risk_badge.badge_scoring import clamp_score, to_tier
 
 RSI_WEIGHT = 0.6
 BB_WEIGHT = 0.4

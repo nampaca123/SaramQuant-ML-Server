@@ -4,8 +4,8 @@ Uptrend weight: 0.6 (strong uptrend is less alarming)
 Downtrend weight: 1.0 (strong downtrend is more alarming)
 """
 
-from app.quant.risk_badge.dimension import DimensionResult, Direction
-from app.quant.risk_badge.scoring import clamp_score, to_tier
+from app.quant.risk_badge.badge_types import DimensionResult, Direction
+from app.quant.risk_badge.badge_scoring import clamp_score, to_tier
 
 UPTREND_WEIGHT = 0.6
 DOWNTREND_WEIGHT = 1.0

@@ -1,7 +1,7 @@
 """Dimension 2: Volatility (Beta 50% + volatility_z 50%)"""
 
-from app.quant.risk_badge.dimension import DimensionResult, Direction
-from app.quant.risk_badge.scoring import clamp_beta, clamp_score, to_tier
+from app.quant.risk_badge.badge_types import DimensionResult, Direction
+from app.quant.risk_badge.badge_scoring import clamp_beta, clamp_score, to_tier
 
 
 def _beta_score(beta: float) -> float:

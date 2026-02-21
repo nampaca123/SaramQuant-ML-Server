@@ -1,6 +1,6 @@
 import math
 
-from app.quant.risk_badge.dimension import TIER_THRESHOLDS, BadgeTier
+from app.quant.risk_badge.badge_types import TIER_THRESHOLDS, BadgeTier
 
 BETA_CLAMP = (-5.0, 5.0)
 

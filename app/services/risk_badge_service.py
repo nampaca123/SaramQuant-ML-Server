@@ -10,9 +10,14 @@ from app.db.repositories.fundamental import FundamentalRepository
 from app.db.repositories.indicator import IndicatorRepository
 from app.db.repositories.risk_badge import RiskBadgeRepository
 from app.quant.risk_badge import (
-    company_health, composite, price_heat, trend, valuation, volatility,
+    dimension_company_health as company_health,
+    composite_badge as composite,
+    dimension_price_heat as price_heat,
+    dimension_trend as trend,
+    dimension_valuation as valuation,
+    dimension_volatility as volatility,
 )
-from app.quant.risk_badge.dimension import DimensionResult
+from app.quant.risk_badge.badge_types import DimensionResult
 from app.schema import Market
 
 logger = logging.getLogger(__name__)

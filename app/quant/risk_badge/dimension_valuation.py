@@ -5,8 +5,8 @@ Negative PER handling:
   - Otherwise: score 70 (structural concern)
 """
 
-from app.quant.risk_badge.dimension import DimensionResult
-from app.quant.risk_badge.scoring import (
+from app.quant.risk_badge.badge_types import DimensionResult
+from app.quant.risk_badge.badge_scoring import (
     clamp_score, safe_ratio, sector_or_market_fallback, to_tier,
 )
 
