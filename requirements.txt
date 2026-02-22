@@ -7,3 +7,4 @@ requests==2.32.5
 psycopg2-binary==2.9.11
 python-dotenv==1.2.1
 flask==3.1.2
+matplotlib==3.10.8
