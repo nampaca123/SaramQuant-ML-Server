@@ -630,15 +630,35 @@ python -m app.pipeline us-fs      # US 재무제표 수집 + 펀더멘털 재계
 - KR: 장 마감 15:30 KST → 데이터 확정 ~17:00 → 18:00 실행 → 다음 장 09:00까지 15시간 여유
 - US: 장 마감 16:00 EST = 06:00 KST → 데이터 확정 ~08:00 KST → 09:00 실행 → 다음 장 23:30 KST까지 14.5시간 여유
 
-### Cron 설정 (참고)
+### 재무제표 수집 스케줄 (분기)
 
-```bash
-# KR pipeline: 18:00 KST, Mon-Fri
-0 18 * * 1-5 cd /path/to/saramquant-calc-server && .venv/bin/python -m app.pipeline kr >> logs/pipeline.log 2>&1
+공시 법정 기한 + 5~7일 여유를 두어 지각 제출 종목까지 커버한다.
 
-# US pipeline: 09:00 KST, Tue-Sat
-0 9 * * 2-6 cd /path/to/saramquant-calc-server && .venv/bin/python -m app.pipeline us >> logs/pipeline.log 2>&1
-```
+| 날짜 (KST) | 명령어 | 대상 분기 | 근거 |
+|-------------|--------|-----------|------|
+| 4/7 03:00 | `kr-fs`, `us-fs` | Q4/연간 | KR 사업보고서 3/31 마감, US 10-K ~3/1 마감 |
+| 5/22 03:00 | `kr-fs`, `us-fs` | Q1 | KR 분기보고서 5/15 마감, US 10-Q ~5/10 마감 |
+| 8/21 03:00 | `kr-fs`, `us-fs` | Q2/반기 | KR 반기보고서 8/14 마감, US 10-Q ~8/9 마감 |
+| 11/21 03:00 | `kr-fs`, `us-fs` | Q3 | KR 분기보고서 11/14 마감, US 10-Q ~11/9 마감 |
+
+### 스케줄러 구현 (`scheduler.py`)
+
+APScheduler `BlockingScheduler`로 모든 스케줄을 Python 코드에 선언. Docker 컨테이너에서 `python scheduler.py`로 실행.
+
+- 일일 파이프라인 2건: KR 18:00 Mon-Fri, US 09:00 Tue-Sat
+- 분기 재무제표 8건: 4개 날짜 × KR/US, 각각 개별 job으로 등록 (cartesian product 방지)
+- 헬스체크: `:8080`에 HTTP 서버 (Railway health check용)
+- 파이프라인은 `subprocess.run`으로 실행 (프로세스 격리)
+- APScheduler 기본 ThreadPoolExecutor(max_workers=20)가 동시 실행 처리
+
+### Railway 배포
+
+같은 repo에서 두 개 서비스로 운영:
+
+| 서비스 | Start Command | 포트 |
+|--------|---------------|------|
+| Web | `python run.py` | 5000 |
+| Scheduler | `python scheduler.py` | 8080 (health check only) |
 
 ---
 
