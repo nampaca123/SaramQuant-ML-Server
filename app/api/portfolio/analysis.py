@@ -46,3 +46,15 @@ def diversification():
     except Exception as e:
         logger.exception("diversification failed for portfolio %s", pid)
         return jsonify({"error": str(e)}), 200
+
+
+@portfolio_bp.route("/benchmark-comparison", methods=["POST"])
+def benchmark_comparison():
+    pid = _get_portfolio_id()
+    if not pid:
+        return jsonify({"error": "portfolio_id required"}), 400
+    try:
+        return jsonify(PortfolioAnalysisService.benchmark_comparison(pid))
+    except Exception as e:
+        logger.exception("benchmark_comparison failed for portfolio %s", pid)
+        return jsonify({"error": str(e)}), 200

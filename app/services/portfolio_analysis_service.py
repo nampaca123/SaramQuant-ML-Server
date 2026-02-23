@@ -2,8 +2,8 @@ import logging
 import numpy as np
 from decimal import Decimal
 
-from app.db import get_connection, PortfolioRepository, StockRepository, DailyPriceRepository
-from app.schema import Market
+from app.db import get_connection, PortfolioRepository, StockRepository, DailyPriceRepository, BenchmarkRepository
+from app.schema import Market, Benchmark
 from app.quant.portfolio.hypothetical_returns import build_hypothetical_returns
 from app.quant.portfolio.portfolio_risk_score import compute_risk_score
 from app.quant.portfolio.diversification import compute_diversification_metrics
@@ -123,6 +123,46 @@ class PortfolioAnalysisService:
         total = values.sum()
         weights = values / total if total > 0 else np.ones(len(values)) / len(values)
         return stock_ids, weights
+
+    @staticmethod
+    def benchmark_comparison(portfolio_id: int) -> dict:
+        holdings, market_group = PortfolioAnalysisService._load_context(portfolio_id)
+        if not holdings:
+            return {"error": "No holdings"}
+
+        stock_ids, weights = PortfolioAnalysisService._compute_weights(holdings)
+        hyp = build_hypothetical_returns(stock_ids, weights)
+
+        if hyp["coverage"] == "INSUFFICIENT":
+            return {"error": "Insufficient data"}
+
+        portfolio_returns = hyp["returns"]
+        lookback = len(portfolio_returns)
+
+        benchmark_key = Benchmark.KR_KOSPI if market_group == "KR" else Benchmark.US_SP500
+        benchmark_name = "KOSPI" if market_group == "KR" else "S&P 500"
+
+        with get_connection() as conn:
+            repo = BenchmarkRepository(conn)
+            prices = repo.get_prices(benchmark_key, limit=lookback + 1)
+
+        if len(prices) < 20:
+            return {"error": "Benchmark data unavailable"}
+
+        closes = np.array([float(p.close) for p in prices])[::-1]
+        bench_returns = np.diff(closes) / closes[:-1]
+        n = min(len(portfolio_returns), len(bench_returns))
+
+        port_cum = float(np.prod(1 + portfolio_returns[-n:]) - 1)
+        bench_cum = float(np.prod(1 + bench_returns[-n:]) - 1)
+
+        return {
+            "portfolio_return": round(port_cum * 100, 2),
+            "benchmark_return": round(bench_cum * 100, 2),
+            "excess_return": round((port_cum - bench_cum) * 100, 2),
+            "benchmark_name": benchmark_name,
+            "lookback_days": n,
+        }
 
     @staticmethod
     def _get_returns_matrix(stock_ids: list[int], lookback: int = 252):
