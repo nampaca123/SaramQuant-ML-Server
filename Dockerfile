@@ -8,4 +8,6 @@ RUN pip install --no-cache-dir --no-deps pykrx==1.2.4 && \
 
 COPY . .
 
+EXPOSE 5000
+
 CMD ["python", "run.py"]
