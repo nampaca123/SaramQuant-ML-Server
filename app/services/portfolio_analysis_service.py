@@ -148,7 +148,8 @@ class PortfolioAnalysisService:
         ]).T
 
         stock_returns = np.diff(price_matrix, axis=0) / price_matrix[:-1]
-        port_cum = np.cumprod(stock_returns @ weights)
+        portfolio_returns = stock_returns @ weights
+        port_cum = np.cumprod(1 + portfolio_returns)
 
         bench_prices = {p.date: float(p.close) for p in bench_prices_raw}
         bench_dates = sorted(set(bench_prices.keys()) & set(common_dates[1:]))
