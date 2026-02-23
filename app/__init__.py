@@ -6,11 +6,6 @@ from flask import Flask, request
 from app.utils.system.errors import register_error_handlers
 
 _CALC_AUTH_KEY = os.getenv("CALC_AUTH_KEY", "")
-_ALLOWED_IPS = {
-    ip.strip()
-    for ip in os.getenv("ALLOWED_GATEWAY_IPS", "127.0.0.1,::1").split(",")
-    if ip.strip()
-}
 
 
 def create_app() -> Flask:
@@ -28,12 +23,6 @@ def create_app() -> Flask:
 
     from app.log.middleware.audit_middleware import register_audit_middleware
     register_audit_middleware(app)
-
-    @app.before_request
-    def _check_ip_whitelist():
-        if request.path.startswith("/internal"):
-            if request.remote_addr not in _ALLOWED_IPS:
-                return {"error": "Forbidden"}, 403
 
     @app.before_request
     def _check_api_key():
