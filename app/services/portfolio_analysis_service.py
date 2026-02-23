@@ -68,7 +68,7 @@ class PortfolioAnalysisService:
         if returns_matrix_data is None:
             return {"error": "Cannot build returns matrix"}
 
-        cov_matrix = np.cov(returns_matrix_data.T)
+        cov_matrix = np.atleast_2d(np.cov(returns_matrix_data.T))
         mcar_result = compute_mcar(weights, cov_matrix)
 
         with get_connection() as conn:

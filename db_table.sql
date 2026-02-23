@@ -365,6 +365,26 @@ create table if not exists public.stock_llm_analyses (
 create index if not exists idx_stock_llm_analyses_lookup
   on public.stock_llm_analyses (stock_id, date, preset, lang);
 
+create table if not exists public.portfolio_llm_analyses (
+  id bigserial primary key,
+  portfolio_id bigint not null references public.user_portfolios(id) on delete cascade,
+  date date not null,
+  preset varchar(30) not null,
+  lang varchar(2) not null default 'ko',
+  analysis text not null,
+  model varchar(50) not null,
+  created_at timestamptz not null default now(),
+  constraint portfolio_llm_analyses_portfolio_date_preset_lang_uq
+    unique (portfolio_id, date, preset, lang)
+);
+
+create index if not exists idx_portfolio_llm_analyses_lookup
+  on public.portfolio_llm_analyses (portfolio_id, date, preset, lang);
+create index if not exists idx_portfolio_llm_analyses_cleanup
+  on public.portfolio_llm_analyses (created_at);
+create index if not exists idx_portfolio_llm_analyses_history
+  on public.portfolio_llm_analyses (portfolio_id, created_at desc);
+
 -- ============================================================
 -- User / Auth tables
 -- ============================================================
