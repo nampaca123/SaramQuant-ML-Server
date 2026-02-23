@@ -417,10 +417,14 @@ create table if not exists public.users (
   provider_id varchar(255) not null,
   password_hash varchar(60),
   role public.user_role_type not null default 'STANDARD',
+  is_active boolean not null default true,
+  deactivated_at timestamptz,
   created_at timestamptz not null default now(),
   last_login_at timestamptz not null default now(),
   constraint users_provider_uq unique (provider, provider_id)
 );
+
+create index if not exists idx_users_is_active on public.users (is_active);
 
 create table if not exists public.user_profiles (
   id uuid primary key default gen_random_uuid(),
