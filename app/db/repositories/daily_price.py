@@ -112,22 +112,21 @@ class DailyPriceRepository:
         self, market: Market, limit_per_stock: int = 300
     ) -> dict[int, list[tuple]]:
         query = """
-            SELECT stock_id, date, open, high, low, close, volume
-            FROM (
-                SELECT dp.stock_id, dp.date,
-                       dp.open, dp.high, dp.low, dp.close, dp.volume,
-                       ROW_NUMBER() OVER (
-                           PARTITION BY dp.stock_id ORDER BY dp.date DESC
-                       ) AS rn
+            SELECT s.id AS stock_id,
+                   dp.date, dp.open, dp.high, dp.low, dp.close, dp.volume
+            FROM stocks s
+            CROSS JOIN LATERAL (
+                SELECT date, open, high, low, close, volume
                 FROM daily_prices dp
-                JOIN stocks s ON dp.stock_id = s.id
-                WHERE s.market = %s AND s.is_active = true
-            ) sub
-            WHERE rn <= %s
-            ORDER BY stock_id, date
+                WHERE dp.stock_id = s.id
+                ORDER BY dp.date DESC
+                LIMIT %s
+            ) dp
+            WHERE s.market = %s AND s.is_active = true
+            ORDER BY s.id, dp.date
         """
         with self._conn.cursor() as cur:
-            cur.execute(query, (market.value, limit_per_stock))
+            cur.execute(query, (limit_per_stock, market.value))
             result: dict[int, list[tuple]] = {}
             for row in cur.fetchall():
                 stock_id = row[0]
