@@ -7,6 +7,10 @@ from app.quant.simulation import (
     generate_correlated_gbm_paths,
     simulation_summary,
 )
+from app.quant.simulation.defaults import (
+    DEFAULT_DAYS, DEFAULT_NUM_SIMULATIONS, DEFAULT_CONFIDENCE,
+    DEFAULT_LOOKBACK,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -18,10 +22,10 @@ class PortfolioSimulationService:
     @staticmethod
     def run(
         portfolio_id: int,
-        days: int = 60,
-        num_simulations: int = 10000,
-        confidence: float = 0.95,
-        lookback: int = 252,
+        days: int = DEFAULT_DAYS,
+        num_simulations: int = DEFAULT_NUM_SIMULATIONS,
+        confidence: float = DEFAULT_CONFIDENCE,
+        lookback: int = DEFAULT_LOOKBACK,
         method: str = "bootstrap",
     ) -> dict:
         if method not in METHODS:

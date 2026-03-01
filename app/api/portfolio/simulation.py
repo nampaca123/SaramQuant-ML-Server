@@ -1,6 +1,10 @@
 import logging
 from flask import request, jsonify
 from app.api.portfolio import portfolio_bp
+from app.quant.simulation.defaults import (
+    DEFAULT_DAYS, DEFAULT_NUM_SIMULATIONS, DEFAULT_CONFIDENCE,
+    DEFAULT_LOOKBACK,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -11,10 +15,10 @@ def portfolio_simulation(portfolio_id: int):
 
     try:
         params = {
-            "days": int(request.args.get("days", 60)),
-            "num_simulations": int(request.args.get("simulations", 10000)),
-            "confidence": float(request.args.get("confidence", 0.95)),
-            "lookback": int(request.args.get("lookback", 252)),
+            "days": int(request.args.get("days", DEFAULT_DAYS)),
+            "num_simulations": int(request.args.get("simulations", DEFAULT_NUM_SIMULATIONS)),
+            "confidence": float(request.args.get("confidence", DEFAULT_CONFIDENCE)),
+            "lookback": int(request.args.get("lookback", DEFAULT_LOOKBACK)),
             "method": request.args.get("method", "bootstrap"),
         }
         result = PortfolioSimulationService.run(portfolio_id=portfolio_id, **params)

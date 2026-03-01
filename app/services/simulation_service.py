@@ -7,6 +7,10 @@ from app.quant.simulation import (
     generate_bootstrap_paths,
     simulation_summary,
 )
+from app.quant.simulation.defaults import (
+    DEFAULT_DAYS, DEFAULT_NUM_SIMULATIONS, DEFAULT_CONFIDENCE,
+    DEFAULT_LOOKBACK,
+)
 
 METHODS = {"gbm", "bootstrap"}
 MIN_DATA_POINTS = 60
@@ -17,10 +21,10 @@ class SimulationService:
     def run(
         symbol: str,
         market: Market,
-        days: int = 60,
-        num_simulations: int = 10000,
-        confidence: float = 0.95,
-        lookback: int = 252,
+        days: int = DEFAULT_DAYS,
+        num_simulations: int = DEFAULT_NUM_SIMULATIONS,
+        confidence: float = DEFAULT_CONFIDENCE,
+        lookback: int = DEFAULT_LOOKBACK,
         method: str = "gbm",
     ) -> dict:
         if method not in METHODS:

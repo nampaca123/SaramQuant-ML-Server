@@ -1,6 +1,10 @@
 from flask import Blueprint, request, jsonify
 from app.schema import Market
 from app.services.simulation_service import SimulationService
+from app.quant.simulation.defaults import (
+    DEFAULT_DAYS, DEFAULT_NUM_SIMULATIONS, DEFAULT_CONFIDENCE,
+    DEFAULT_LOOKBACK,
+)
 
 simulation_bp = Blueprint("simulation", __name__, url_prefix="/internal")
 
@@ -29,9 +33,9 @@ def run_simulation(symbol: str):
 
 def _parse_params(args) -> dict:
     return {
-        "days": int(args.get("days", 60)),
-        "num_simulations": int(args.get("simulations", 10000)),
-        "confidence": float(args.get("confidence", 0.95)),
-        "lookback": int(args.get("lookback", 252)),
+        "days": int(args.get("days", DEFAULT_DAYS)),
+        "num_simulations": int(args.get("simulations", DEFAULT_NUM_SIMULATIONS)),
+        "confidence": float(args.get("confidence", DEFAULT_CONFIDENCE)),
+        "lookback": int(args.get("lookback", DEFAULT_LOOKBACK)),
         "method": args.get("method", "gbm"),
     }
