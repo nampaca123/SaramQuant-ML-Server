@@ -1,6 +1,7 @@
 import logging
 import time
 from typing import Callable, Any
+from concurrent.futures import ThreadPoolExecutor
 
 from app.db import get_connection, DailyPriceRepository
 from app.db.repositories.stock import StockRepository
@@ -33,8 +34,11 @@ class PipelineOrchestrator:
 
     def run_daily_kr(self) -> None:
         logger.info("[Pipeline] Starting KR daily pipeline")
-        self._collector.collect_all("kr")
-        self._safe_step("exchange_rates", self._collect_exchange_rates)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            collect_future = pool.submit(self._collector.collect_all, "kr")
+            exchange_future = pool.submit(self._collect_exchange_rates)
+            collect_future.result()
+            exchange_future.result()
         self._run_compute_pipeline("kr")
         logger.info("[Pipeline] KR daily pipeline complete")
 
@@ -89,13 +93,21 @@ class PipelineOrchestrator:
 
         fund = self._safe_step("fundamentals", self._compute_fundamentals, region, price_maps)
         steps.append(fund)
-        factor = self._safe_step("factors", self._compute_factors, region, price_maps) if fund.success else StepResult("factors", False, 0, "skipped")
-        steps.append(factor)
-        if factor.success:
-            steps.append(self._safe_step("indicators", self._compute_indicators, region, price_maps))
+
         if fund.success:
-            steps.append(self._safe_step("sector_agg", self._compute_sector_aggregates, region))
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                factor_future = pool.submit(self._safe_step, "factors", self._compute_factors, region, price_maps)
+                sector_agg_future = pool.submit(self._safe_step, "sector_agg", self._compute_sector_aggregates, region)
+                factor = factor_future.result()
+                sector_agg = sector_agg_future.result()
+            steps.extend([factor, sector_agg])
+
+            if factor.success:
+                steps.append(self._safe_step("indicators", self._compute_indicators, region, price_maps))
             steps.append(self._safe_step("risk_badges", self._compute_risk_badges, region))
+        else:
+            steps.append(StepResult("factors", False, 0, "skipped"))
+
         self._run_integrity_check(region)
 
         meta = PipelineMetadata(
@@ -154,11 +166,14 @@ class PipelineOrchestrator:
     # ── helpers ──
 
     def _load_prices(self, markets: list[Market]) -> PriceMaps:
+        def _load_market(market: Market) -> tuple[Market, dict[int, list[tuple]]]:
+            with get_connection() as conn:
+                return market, DailyPriceRepository(conn).get_prices_by_market(market, limit_per_stock=300)
+
         price_maps: PriceMaps = {}
-        with get_connection() as conn:
-            repo = DailyPriceRepository(conn)
-            for market in markets:
-                price_maps[market] = repo.get_prices_by_market(market, limit_per_stock=300)
+        with ThreadPoolExecutor(max_workers=len(markets)) as pool:
+            for market, data in pool.map(_load_market, markets):
+                price_maps[market] = data
         return price_maps
 
     def _safe_step(self, name: str, fn: Callable[..., Any], *args: Any) -> StepResult:

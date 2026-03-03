@@ -15,21 +15,28 @@ from app.utils import load_benchmark_returns, load_risk_free_rates
 
 logger = logging.getLogger(__name__)
 
-_MAX_WORKERS = min(4, os.cpu_count() or 4)
-_CHUNK_SIZE = 250
+_MAX_WORKERS = min(8, os.cpu_count() or 8)
+_CHUNK_SIZE = 100
+
+_shared: dict = {}
 
 
-def _compute_chunk(
-    args: tuple[list[tuple[int, list[tuple]]], pd.Series | None, float, dict[int, float | None]],
-) -> tuple[list[tuple], list[int]]:
-    stock_batch, bench_ret, rf_rate, factor_betas = args
+def _init_worker(bench_ret: pd.Series | None, rf_rate: float, factor_betas: dict[int, float | None]):
+    _shared["bench_ret"] = bench_ret
+    _shared["rf_rate"] = rf_rate
+    _shared["factor_betas"] = factor_betas
+
+
+def _compute_chunk(stock_batch: list[tuple[int, list[tuple]]]) -> tuple[list[tuple], list[int]]:
     rows, failed = [], []
     for stock_id, raw_prices in stock_batch:
         try:
             df = IndicatorService.build_dataframe(raw_prices)
             if df is not None:
-                fb = factor_betas.get(stock_id)
-                rows.append(IndicatorService.compute(stock_id, df, bench_ret, rf_rate, fb))
+                fb = _shared["factor_betas"].get(stock_id)
+                rows.append(IndicatorService.compute(
+                    stock_id, df, _shared["bench_ret"], _shared["rf_rate"], fb,
+                ))
         except Exception:
             failed.append(stock_id)
     return rows, failed
@@ -83,12 +90,15 @@ class IndicatorComputeEngine:
 
         items = list(price_map.items())
         chunks = [items[i:i + _CHUNK_SIZE] for i in range(0, len(items), _CHUNK_SIZE)]
-        args = [(c, bench_ret, rf_rate, factor_betas) for c in chunks]
 
         rows: list[tuple] = []
         failed: list[int] = []
-        with ProcessPoolExecutor(max_workers=_MAX_WORKERS) as pool:
-            for batch_rows, batch_failed in pool.map(_compute_chunk, args):
+        with ProcessPoolExecutor(
+            max_workers=_MAX_WORKERS,
+            initializer=_init_worker,
+            initargs=(bench_ret, rf_rate, factor_betas),
+        ) as pool:
+            for batch_rows, batch_failed in pool.map(_compute_chunk, chunks):
                 rows.extend(batch_rows)
                 failed.extend(batch_failed)
 

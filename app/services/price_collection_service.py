@@ -1,4 +1,5 @@
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from app.schema import Market, Benchmark, Maturity
 from app.collectors import (
@@ -35,10 +36,21 @@ class PriceCollectionService:
         results: dict[str, int] = {}
 
         results["stocks"] = self._collect_stocks(cfg["markets"])
-        results["sectors"] = self._collect_sectors(cfg["markets"])
-        results["prices"] = self._collect_prices(region)
-        results["benchmarks"] = self._collect_benchmarks(cfg["benchmarks"])
-        results["risk_free_rates"] = self._collect_risk_free_rates(region, cfg["maturities"])
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            futures = {
+                pool.submit(self._collect_sectors, cfg["markets"]): "sectors",
+                pool.submit(self._collect_prices, region): "prices",
+                pool.submit(self._collect_benchmarks, cfg["benchmarks"]): "benchmarks",
+                pool.submit(self._collect_risk_free_rates, region, cfg["maturities"]): "risk_free_rates",
+            }
+            for future in as_completed(futures):
+                key = futures[future]
+                try:
+                    results[key] = future.result()
+                except Exception as e:
+                    logger.error(f"[PriceCollection] {key} failed: {e}", exc_info=True)
+                    results[key] = 0
 
         logger.info(f"[PriceCollection] {region.upper()} complete: {results}")
         return results
