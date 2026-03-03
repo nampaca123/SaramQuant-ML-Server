@@ -39,6 +39,9 @@ class KrDailyPriceCollector:
 
         last_date = self._get_market_last_date(market)
         dates = self._generate_dates(last_date)
+        if dates is None:
+            logger.error(f"[KrDailyPrice] {market.value}: failed to fetch trading days, skipping")
+            return {}
         if not dates:
             logger.info(f"[KrDailyPrice] {market.value} already up to date")
             return {}
@@ -83,12 +86,14 @@ class KrDailyPriceCollector:
         with get_connection() as conn:
             return DailyPriceRepository(conn).get_latest_date_by_market(market)
 
-    def _generate_dates(self, last_date: date | None) -> list[date]:
+    def _generate_dates(self, last_date: date | None) -> list[date] | None:
         start = (last_date + timedelta(days=1)) if last_date else (date.today() - timedelta(days=INITIAL_LOOKBACK_DAYS - 1))
         end = date.today()
         if start > end:
             return []
-        return [start + timedelta(days=i) for i in range((end - start).days + 1)]
+        return self._client.get_trading_days(
+            start.strftime("%Y%m%d"), end.strftime("%Y%m%d")
+        )
 
     def _upsert_day(
         self, df, price_date: date, stock_map: dict[str, int]

@@ -1,6 +1,7 @@
 import logging
 import os
 import time
+from datetime import date
 
 import pandas as pd
 import requests
@@ -96,6 +97,16 @@ class PykrxClient:
                 wait = _RETRY_WAIT * (attempt + 1)
                 logger.warning(f"[pykrx] Retry {attempt + 1}/{_RETRIES} in {wait}s: {e}")
                 time.sleep(wait)
+
+    def get_trading_days(self, start: str, end: str) -> list[date] | None:
+        try:
+            df = self._call(stock.get_index_ohlcv, start, end, "1001")
+        except Exception:
+            logger.error(f"[pykrx] Failed to fetch trading days {start}~{end}")
+            return None
+        if df is None or df.empty:
+            return []
+        return [ts.date() for ts in df.index]
 
     def fetch_market_ohlcv(self, date_str: str, market: str) -> pd.DataFrame:
         df = self._call(stock.get_market_ohlcv, date_str, market=market)
