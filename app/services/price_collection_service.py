@@ -37,6 +37,16 @@ class PriceCollectionService:
 
         results["stocks"] = self._collect_stocks(cfg["markets"])
 
+        if region == "us":
+            results.update(self._collect_parallel(region, cfg))
+        else:
+            results.update(self._collect_sequential(region, cfg))
+
+        logger.info(f"[PriceCollection] {region.upper()} complete: {results}")
+        return results
+
+    def _collect_parallel(self, region: str, cfg: dict) -> dict[str, int]:
+        results: dict[str, int] = {}
         with ThreadPoolExecutor(max_workers=4) as pool:
             futures = {
                 pool.submit(self._collect_sectors, cfg["markets"]): "sectors",
@@ -51,8 +61,22 @@ class PriceCollectionService:
                 except Exception as e:
                     logger.error(f"[PriceCollection] {key} failed: {e}", exc_info=True)
                     results[key] = 0
+        return results
 
-        logger.info(f"[PriceCollection] {region.upper()} complete: {results}")
+    def _collect_sequential(self, region: str, cfg: dict) -> dict[str, int]:
+        results: dict[str, int] = {}
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            rf_future = pool.submit(self._collect_risk_free_rates, region, cfg["maturities"])
+
+            results["sectors"] = self._collect_sectors(cfg["markets"])
+            results["prices"] = self._collect_prices(region)
+            results["benchmarks"] = self._collect_benchmarks(cfg["benchmarks"])
+
+            try:
+                results["risk_free_rates"] = rf_future.result()
+            except Exception as e:
+                logger.error(f"[PriceCollection] risk_free_rates failed: {e}", exc_info=True)
+                results["risk_free_rates"] = 0
         return results
 
     def _collect_stocks(self, markets: list[Market]) -> int:
