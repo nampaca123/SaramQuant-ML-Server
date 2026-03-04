@@ -13,30 +13,26 @@ COLUMNS = [c for c, _ in _COL_TYPES]
 _UNNEST = ", ".join(f"%s::{t}[]" for _, t in _COL_TYPES)
 
 
+_UPDATE_COLS = [c for c in COLUMNS if c not in ("stock_id", "date")]
+_UPSERT_CONFLICT = (
+    "ON CONFLICT (stock_id, date) DO UPDATE SET "
+    + ", ".join(f"{c} = EXCLUDED.{c}" for c in _UPDATE_COLS)
+)
+
+
 class FundamentalRepository:
     def __init__(self, conn: connection):
         self._conn = conn
 
-    def delete_by_markets(self, markets: list[Market]) -> int:
-        query = """
-            DELETE FROM stock_fundamentals
-            WHERE stock_id IN (
-                SELECT id FROM stocks WHERE market = ANY(%s::market_type[])
-            )
-        """
-        market_values = [m.value for m in markets]
-        with self._conn.cursor() as cur:
-            cur.execute(query, (market_values,))
-            return cur.rowcount
-
-    def insert_batch(self, rows: list[tuple]) -> int:
+    def upsert_batch(self, rows: list[tuple]) -> int:
         if not rows:
             return 0
         cols = [list(c) for c in zip(*rows)]
         with self._conn.cursor() as cur:
             cur.execute(
                 f"INSERT INTO stock_fundamentals ({', '.join(COLUMNS)}) "
-                f"SELECT * FROM UNNEST({_UNNEST})",
+                f"SELECT * FROM UNNEST({_UNNEST}) "
+                f"{_UPSERT_CONFLICT}",
                 cols,
             )
             return cur.rowcount

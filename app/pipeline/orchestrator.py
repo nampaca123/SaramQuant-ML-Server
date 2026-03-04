@@ -34,18 +34,24 @@ class PipelineOrchestrator:
 
     def run_daily_kr(self) -> None:
         logger.info("[Pipeline] Starting KR daily pipeline")
+        collect_start = time.monotonic()
         with ThreadPoolExecutor(max_workers=2) as pool:
             collect_future = pool.submit(self._collector.collect_all, "kr")
             exchange_future = pool.submit(self._collect_exchange_rates)
             collect_future.result()
             exchange_future.result()
-        self._run_compute_pipeline("kr")
+        collect_ms = int((time.monotonic() - collect_start) * 1000)
+        logger.info(f"[Pipeline] KR collection done in {collect_ms}ms")
+        self._run_compute_pipeline("kr", collect_ms=collect_ms)
         logger.info("[Pipeline] KR daily pipeline complete")
 
     def run_daily_us(self) -> None:
         logger.info("[Pipeline] Starting US daily pipeline")
+        collect_start = time.monotonic()
         self._collector.collect_all("us")
-        self._run_compute_pipeline("us")
+        collect_ms = int((time.monotonic() - collect_start) * 1000)
+        logger.info(f"[Pipeline] US collection done in {collect_ms}ms")
+        self._run_compute_pipeline("us", collect_ms=collect_ms)
         logger.info("[Pipeline] US daily pipeline complete")
 
     def run_initial_kr(self) -> None:
@@ -76,11 +82,14 @@ class PipelineOrchestrator:
 
     # ── compute pipeline ──
 
-    def _run_compute_pipeline(self, command: str) -> None:
+    def _run_compute_pipeline(self, command: str, collect_ms: int = 0) -> None:
         region = command.replace("-initial", "")
         markets = REGION_CONFIG[region]["markets"]
         steps: list[StepResult] = []
         pipeline_start = time.monotonic()
+
+        if collect_ms > 0:
+            steps.append(StepResult("collection", True, collect_ms))
 
         if not self._progressive_deactivate(markets):
             return
@@ -107,6 +116,7 @@ class PipelineOrchestrator:
             steps.append(self._safe_step("risk_badges", self._compute_risk_badges, region))
         else:
             steps.append(StepResult("factors", False, 0, "skipped"))
+            logger.error("[Pipeline] Fundamentals failed — skipping factors/indicators/risk_badges")
 
         self._run_integrity_check(region)
 

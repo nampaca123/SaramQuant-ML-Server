@@ -37,13 +37,10 @@ class FundamentalComputeEngine:
             f"{stats['clamped']} clamped, {stats['negative_equity']} negative_equity"
         )
 
-        deleted = self._fund_repo.delete_by_markets(markets)
-        logger.info(f"[FundCompute] Deleted {deleted} old fundamental rows")
-
-        inserted = self._fund_repo.insert_batch(all_rows)
+        count = self._fund_repo.upsert_batch(all_rows)
         self._conn.commit()
-        logger.info(f"[FundCompute] Inserted {inserted} fundamental rows")
-        return inserted
+        logger.info(f"[FundCompute] Upserted {count} fundamental rows")
+        return count
 
     def _process_market(
         self, market: Market, price_map: dict[int, list[tuple]] | None = None
