@@ -35,9 +35,14 @@ with ProcessPoolExecutor(max_workers=_MAX_WORKERS) as pool:
 
 문제: `bench_ret`(pd.Series)와 `factor_betas`(4,300개 dict)를 **매 청크마다** 인자로 전달했다. 4,300종목 / 250 = 17청크이므로 같은 데이터가 **17번** pickle 직렬화되었다.
 
-여기에 **Python 3.14의 변경**이 결정적으로 작용했다. Python 3.14부터 Linux에서도 기본 multiprocessing start method가 `fork`에서 `spawn`으로 바뀌었다. `fork`는 부모 메모리를 copy-on-write로 상속하므로 pickle이 불필요했지만, `spawn`은 새 인터프리터를 시작하므로 **모든 인자를 pickle로 직렬화**해야 한다.
+여기에 **Python 3.14의 변경**이 결정적으로 작용했다. Python 3.14부터 Linux/Unix(macOS 제외)의 기본 multiprocessing start method가 `fork`에서 `forkserver`로 바뀌었다 ([What's New in Python 3.14](https://docs.python.org/3/whatsnew/3.14.html)). `fork`는 부모 메모리를 copy-on-write로 상속하므로 인자를 pickle할 필요가 없었지만, `forkserver`는 별도 서버 프로세스를 경유하므로 **태스크 인자를 pickle로 직렬화**해야 한다.
 
-Docker 이미지가 `python:3.14-slim`이었으므로, 이전에 `fork` 모드에서 문제없이 돌아가던 코드가 `spawn` 모드에서 pickle 에러를 일으킨 것이다.
+| Python 버전 | Linux/Unix 기본 | macOS/Windows 기본 |
+|---|---|---|
+| ~3.13 | `fork` | `spawn` |
+| 3.14 | **`forkserver`** | `spawn` (변경 없음) |
+
+Docker 이미지가 `python:3.14-slim`이었으므로, 이전에 `fork` 모드에서 문제없이 돌아가던 코드가 `forkserver` 모드에서 pickle 에러를 일으킨 것이다.
 
 ---
 
@@ -93,7 +98,7 @@ with ProcessPoolExecutor(
         ...
 ```
 
-`initializer`는 **워커 프로세스 생성 시 1회만** 호출된다. 16워커면 공유 데이터가 16번만 pickle된다 (태스크 수인 22번이 아니라). bench_ret ~5KB + factor_betas ~100KB = 워커당 ~105KB, 총 ~1.7MB. `spawn` 모드에서도 무시 가능한 오버헤드다.
+`initializer`는 **워커 프로세스 생성 시 1회만** 호출된다. 16워커면 공유 데이터가 16번만 pickle된다 (태스크 수인 22번이 아니라). bench_ret ~5KB + factor_betas ~100KB = 워커당 ~105KB, 총 ~1.7MB. `forkserver`/`spawn` 어느 모드에서도 무시 가능한 오버헤드다.
 
 태스크 큐에는 stock_batch(200종목의 가격 데이터)만 전송된다.
 
@@ -123,6 +128,6 @@ ThreadPool에서는 이 원칙이 **적용되지 않는다.** GIL 때문에 한 
 
 1. **"어떤 Executor를 쓸까"는 작업의 성격으로 결정한다.** CPU-bound(pandas/numpy 계산)는 ProcessPool, I/O-bound(API 호출, DB 대기)는 ThreadPool. GIL 해제 여부는 배열 크기와 Python wrapper 비율에 따라 달라진다.
 
-2. **Python 3.14의 `spawn` 전환에 대비하라.** `fork`에서 암묵적으로 동작하던 데이터 공유가 깨진다. `_init_worker` 패턴은 `spawn`에서도 동작하는 안전한 공유 방법이다.
+2. **Python 3.14의 `forkserver` 전환에 대비하라.** `fork`에서 암묵적으로 동작하던 데이터 공유가 `forkserver`(Linux/Unix)에서는 깨진다. `_init_worker` 패턴은 `fork`/`forkserver`/`spawn` 어느 모드에서도 동작하는 안전한 공유 방법이다.
 
 3. **에러의 원인과 해결을 혼동하지 마라.** pickle 에러의 원인은 "데이터 전달 패턴"이었지, "ProcessPool 자체"가 아니었다. 원인을 정확히 짚지 못하면 해결책도 엇나간다.
