@@ -64,21 +64,21 @@ class FinancialStatementRepository:
         self, market: Market
     ) -> dict[int, list[FinancialStatement]]:
         query = """
-            SELECT fs.stock_id, fs.fiscal_year, fs.report_type,
-                   fs.revenue, fs.operating_income, fs.net_income,
-                   fs.total_assets, fs.total_liabilities, fs.total_equity,
-                   fs.shares_outstanding
-            FROM financial_statements fs
-            JOIN stocks s ON s.id = fs.stock_id
-            WHERE s.market = %s AND s.is_active = true
-              AND fs.fiscal_year >= (
-                  SELECT MAX(f2.fiscal_year) - 1
-                  FROM financial_statements f2
-                  WHERE f2.stock_id = fs.stock_id
-              )
-            ORDER BY fs.stock_id,
-                     fs.fiscal_year DESC,
-                     CASE fs.report_type
+            SELECT stock_id, fiscal_year, report_type,
+                   revenue, operating_income, net_income,
+                   total_assets, total_liabilities, total_equity,
+                   shares_outstanding
+            FROM (
+                SELECT fs.*,
+                       MAX(fs.fiscal_year) OVER (PARTITION BY fs.stock_id) AS max_fy
+                FROM financial_statements fs
+                JOIN stocks s ON s.id = fs.stock_id
+                WHERE s.market = %s AND s.is_active = true
+            ) sub
+            WHERE fiscal_year >= max_fy - 1
+            ORDER BY stock_id,
+                     fiscal_year DESC,
+                     CASE report_type
                          WHEN 'FY' THEN 4 WHEN 'Q3' THEN 3
                          WHEN 'Q2' THEN 2 WHEN 'Q1' THEN 1
                      END DESC

@@ -218,25 +218,35 @@ class FactorModelService:
     def _compute_price_features(
         self, stock_ids: np.ndarray, price_map: dict
     ) -> tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
-        close_dict, ret_today, ret_252, ret_21, vol_dict = {}, {}, {}, {}, {}
-
+        length_groups: dict[int, tuple[list[int], list[list[float]]]] = {}
         for sid in stock_ids:
             prices = price_map.get(int(sid))
             if not prices or len(prices) < 2:
                 continue
+            closes = [float(p[4]) for p in prices]
+            n = len(closes)
+            if n not in length_groups:
+                length_groups[n] = ([], [])
+            length_groups[n][0].append(sid)
+            length_groups[n][1].append(closes)
 
-            closes = pd.Series([float(p[4]) for p in prices])
-            close_dict[sid] = closes.iloc[-1]
+        close_dict, ret_today, ret_252, ret_21, vol_dict = {}, {}, {}, {}, {}
 
-            rets = closes.pct_change().dropna()
-            if len(rets) > 0:
-                ret_today[sid] = rets.iloc[-1]
-            if len(closes) >= 252:
-                ret_252[sid] = closes.iloc[-1] / closes.iloc[-252] - 1
-            if len(closes) >= 21:
-                ret_21[sid] = closes.iloc[-1] / closes.iloc[-21] - 1
-            if len(rets) >= 42:
-                vol_dict[sid] = rets.ewm(halflife=42).std().iloc[-1]
+        for length, (sids, close_lists) in length_groups.items():
+            arr = np.array(close_lists)
+            sid_arr = np.array(sids)
+
+            close_dict.update(zip(sid_arr, arr[:, -1]))
+            ret_today.update(zip(sid_arr, arr[:, -1] / arr[:, -2] - 1))
+
+            if length >= 252:
+                ret_252.update(zip(sid_arr, arr[:, -1] / arr[:, -252] - 1))
+            if length >= 21:
+                ret_21.update(zip(sid_arr, arr[:, -1] / arr[:, -21] - 1))
+            if length >= 43:
+                rets_df = pd.DataFrame(arr.T).pct_change().iloc[1:]
+                ewm_std = rets_df.ewm(halflife=42).std().iloc[-1].values
+                vol_dict.update(zip(sid_arr, ewm_std))
 
         return (
             pd.Series(close_dict), pd.Series(ret_today),

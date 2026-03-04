@@ -15,7 +15,7 @@ from app.utils import load_benchmark_returns, load_risk_free_rates
 
 logger = logging.getLogger(__name__)
 
-_MAX_WORKERS = min(8, os.cpu_count() or 8)
+_MAX_WORKERS = min(16, os.cpu_count() or 8)
 _CHUNK_SIZE = 50
 
 

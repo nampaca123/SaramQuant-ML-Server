@@ -44,16 +44,17 @@ class FundamentalRepository:
                    fs.shares_outstanding
             FROM stock_fundamentals f
             JOIN stocks s ON s.id = f.stock_id
-            LEFT JOIN LATERAL (
-                SELECT shares_outstanding FROM financial_statements
-                WHERE stock_id = f.stock_id
-                ORDER BY fiscal_year DESC,
-                    CASE report_type
-                        WHEN 'FY' THEN 4 WHEN 'Q3' THEN 3
-                        WHEN 'Q2' THEN 2 WHEN 'Q1' THEN 1
-                    END DESC
-                LIMIT 1
-            ) fs ON true
+            LEFT JOIN (
+                SELECT DISTINCT ON (stock_id)
+                       stock_id, shares_outstanding
+                FROM financial_statements
+                ORDER BY stock_id,
+                         fiscal_year DESC,
+                         CASE report_type
+                             WHEN 'FY' THEN 4 WHEN 'Q3' THEN 3
+                             WHEN 'Q2' THEN 2 WHEN 'Q1' THEN 1
+                         END DESC
+            ) fs ON fs.stock_id = f.stock_id
             WHERE f.stock_id = ANY(%s)
               AND f.data_coverage NOT IN ('NO_FS', 'INSUFFICIENT')
         """
