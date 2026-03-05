@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from app.db import get_connection, DailyPriceRepository
 from app.db.repositories.stock import StockRepository
+from app.db.repositories.indicator import COLUMNS as _IND_COLUMNS
 from app.schema import Market
 from app.services import PriceCollectionService
 from app.services.price_collection_service import REGION_CONFIG
@@ -22,6 +23,24 @@ logger = logging.getLogger(__name__)
 
 PriceMaps = dict[Market, dict[int, list[tuple]]]
 _SAFETY_THRESHOLD = 0.10
+
+
+def _indicator_rows_to_dicts(
+    rows: list[tuple], price_maps: PriceMaps, stock_market_map: dict[int, str],
+) -> dict[str, dict[int, dict]]:
+    close_by_id: dict[int, float] = {}
+    for pm in price_maps.values():
+        for sid, prices in pm.items():
+            if prices:
+                close_by_id[sid] = float(prices[-1][4])
+
+    by_market: dict[str, dict[int, dict]] = {}
+    for row in rows:
+        d = dict(zip(_IND_COLUMNS, row))
+        d["close"] = close_by_id.get(d["stock_id"])
+        mkt = stock_market_map[d["stock_id"]]
+        by_market.setdefault(mkt, {})[d["stock_id"]] = d
+    return by_market
 
 
 class PipelineOrchestrator:
@@ -112,8 +131,7 @@ class PipelineOrchestrator:
             steps.extend([factor, sector_agg])
 
             if factor.success:
-                steps.append(self._safe_step("indicators", self._compute_indicators, region, price_maps))
-            steps.append(self._safe_step("risk_badges", self._compute_risk_badges, region))
+                self._run_indicators_and_badges(region, markets, price_maps, steps)
         else:
             steps.append(StepResult("factors", False, 0, "skipped"))
             logger.error("[Pipeline] Fundamentals failed — skipping factors/indicators/risk_badges")
@@ -197,14 +215,56 @@ class PipelineOrchestrator:
             logger.error(f"[Pipeline] Step '{name}' failed: {e}", exc_info=True)
             return StepResult(name=name, success=False, duration_ms=duration, error=str(e))
 
-    # ── individual compute steps ──
+    # ── indicators + risk_badges (in-memory handoff) ──
 
-    def _compute_indicators(self, region: str, price_maps: PriceMaps | None = None) -> None:
+    def _run_indicators_and_badges(
+        self, region: str, markets: list[Market],
+        price_maps: PriceMaps, steps: list[StepResult],
+    ) -> None:
+        ind_rows, stock_market_map = None, None
+        ind_start = time.monotonic()
+        try:
+            with get_connection() as conn:
+                engine = IndicatorComputeEngine(conn)
+                ind_rows, stock_market_map = engine.compute(markets, price_maps)
+            steps.append(StepResult(
+                "indicators", True, int((time.monotonic() - ind_start) * 1000),
+            ))
+        except Exception as e:
+            steps.append(StepResult(
+                "indicators", False, int((time.monotonic() - ind_start) * 1000), str(e),
+            ))
+            logger.error(f"[Pipeline] indicators failed: {e}", exc_info=True)
+            return
+
+        ind_dicts = _indicator_rows_to_dicts(ind_rows, price_maps, stock_market_map)
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            persist_start = time.monotonic()
+            persist_future = pool.submit(self._persist_indicators, ind_rows, region)
+            badge_step = self._safe_step("risk_badges", self._compute_risk_badges, region, ind_dicts)
+            steps.append(badge_step)
+            try:
+                persist_future.result()
+                steps.append(StepResult(
+                    "indicators_persist", True,
+                    int((time.monotonic() - persist_start) * 1000),
+                ))
+            except Exception as e:
+                steps.append(StepResult(
+                    "indicators_persist", False,
+                    int((time.monotonic() - persist_start) * 1000), str(e),
+                ))
+                logger.exception("[Pipeline] Failed to persist indicators to DB")
+
+    def _persist_indicators(self, rows: list[tuple], region: str) -> None:
         markets = REGION_CONFIG[region]["markets"]
         with get_connection() as conn:
             engine = IndicatorComputeEngine(conn)
-            count = engine.run(markets, price_maps)
-            logger.info(f"[Pipeline] Computed {count} indicator rows")
+            count = engine.persist(rows, markets)
+            logger.info(f"[Pipeline] Persisted {count} indicator rows")
+
+    # ── individual compute steps ──
 
     def _compute_fundamentals(self, region: str, price_maps: PriceMaps | None = None) -> None:
         markets = REGION_CONFIG[region]["markets"]
@@ -227,14 +287,17 @@ class PipelineOrchestrator:
             count = engine.run(markets)
             logger.info(f"[Pipeline] Computed {count} sector aggregate rows")
 
-    def _compute_risk_badges(self, region: str) -> None:
+    def _compute_risk_badges(
+        self, region: str, ind_dicts: dict[str, dict[int, dict]] | None = None,
+    ) -> None:
         markets = REGION_CONFIG[region]["markets"]
         with get_connection() as conn:
             from app.services.risk_badge_service import RiskBadgeService
             from app.db.repositories.risk_badge import RiskBadgeRepository
             service = RiskBadgeService(conn)
             for market in markets:
-                badges = service.compute_batch(market)
+                indicators = ind_dicts.get(market.value) if ind_dicts else None
+                badges = service.compute_batch(market, indicators=indicators)
                 RiskBadgeRepository(conn).upsert_batch(badges)
             conn.commit()
 

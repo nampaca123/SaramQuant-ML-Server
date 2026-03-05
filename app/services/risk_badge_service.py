@@ -45,8 +45,11 @@ class RiskBadgeService:
 
         return self._build_badge_row(stock_id, market.value, summary_tier, dims)
 
-    def compute_batch(self, market: Market) -> list[dict]:
-        indicators = self._ind_repo.get_all_by_market(market)
+    def compute_batch(
+        self, market: Market, indicators: dict[int, dict] | None = None,
+    ) -> list[dict]:
+        if indicators is None:
+            indicators = self._ind_repo.get_all_by_market(market)
         fundamentals = self._fund_repo.get_all_by_market(market)
         exposures = self._factor_repo.get_all_exposures_by_market(market)
         sector_aggs = self._factor_repo.get_all_sector_aggregates(market)
