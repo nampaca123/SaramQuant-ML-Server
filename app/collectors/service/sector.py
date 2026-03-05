@@ -37,10 +37,6 @@ class SectorCollector:
         return None
 
     def _collect_kr(self, markets: list[Market]) -> int:
-        sector_map: dict[str, str] = {}
-        for market in markets:
-            sector_map.update(self._pykrx.fetch_sector_map(MARKET_TO_PYKRX[market]))
-
         rows = []
         with get_connection() as conn:
             repo = StockRepository(conn)
@@ -50,6 +46,10 @@ class SectorCollector:
 
         if not rows:
             return 0
+
+        sector_map: dict[str, str] = {}
+        for market in markets:
+            sector_map.update(self._pykrx.fetch_sector_map(MARKET_TO_PYKRX[market]))
 
         df = pd.DataFrame(rows, columns=["symbol", "market"])
         df["sector"] = df["symbol"].map(sector_map)
