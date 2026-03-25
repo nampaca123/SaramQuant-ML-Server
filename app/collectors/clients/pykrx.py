@@ -1,5 +1,6 @@
 import logging
 import os
+import threading
 import time
 from datetime import date
 
@@ -22,6 +23,7 @@ _RETRY_WAIT = 3.0
 
 _session = requests.Session()
 _logged_in = False
+_login_lock = threading.Lock()
 
 _LOGIN_PAGE = "https://data.krx.co.kr/contents/MDC/COMS/client/MDCCOMS001.cmd"
 _LOGIN_JSP = "https://data.krx.co.kr/contents/MDC/COMS/client/view/login.jsp?site=mdc"
@@ -32,17 +34,14 @@ _UA = (
 )
 
 
-def _ensure_login() -> None:
-    global _logged_in
-    if _logged_in:
-        return
-
+def _do_login() -> bool:
     krx_id = os.environ.get("KRX_ID")
     krx_pw = os.environ.get("KRX_PASSWORD")
     if not krx_id or not krx_pw:
         logger.warning("[pykrx] KRX_ID / KRX_PASSWORD not set — skipping login")
-        return
+        return False
 
+    _session.cookies.clear()
     hdrs = {"User-Agent": _UA}
 
     _session.get(_LOGIN_PAGE, headers=hdrs, timeout=15)
@@ -64,19 +63,52 @@ def _ensure_login() -> None:
 
     if code != "CD001":
         logger.error(f"[pykrx] KRX login failed: {data}")
-        return
+        return False
 
+    logger.info("[pykrx] KRX login OK")
+    return True
+
+
+def _is_auth_failure(resp: requests.Response) -> bool:
+    return resp.status_code != 200
+
+
+def _refresh_and_retry(method: str, url: str, headers: dict, params: dict) -> requests.Response:
+    """Acquire lock, re-check with a fresh request, re-login only if still failing."""
+    with _login_lock:
+        fn = _session.post if method == "post" else _session.get
+        kwargs = {"data": params} if method == "post" else {"params": params}
+        resp = fn(url, headers=headers, **kwargs)
+        if _is_auth_failure(resp):
+            _do_login()
+            resp = fn(url, headers=headers, **kwargs)
+    return resp
+
+
+def _setup_webio_hooks() -> None:
     def _post_read(self, **params):
-        return _session.post(self.url, headers=self.headers, data=params)
+        resp = _session.post(self.url, headers=self.headers, data=params)
+        if _is_auth_failure(resp):
+            resp = _refresh_and_retry("post", self.url, self.headers, params)
+        return resp
 
     def _get_read(self, **params):
-        return _session.get(self.url, headers=self.headers, params=params)
+        resp = _session.get(self.url, headers=self.headers, params=params)
+        if _is_auth_failure(resp):
+            resp = _refresh_and_retry("get", self.url, self.headers, params)
+        return resp
 
     webio.Post.read = _post_read
     webio.Get.read = _get_read
 
-    _logged_in = True
-    logger.info("[pykrx] KRX login OK")
+
+def _ensure_login() -> None:
+    global _logged_in
+    if _logged_in:
+        return
+    if _do_login():
+        _setup_webio_hooks()
+        _logged_in = True
 
 
 # ── PykrxClient ──
