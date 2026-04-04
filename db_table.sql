@@ -572,3 +572,22 @@ begin
   end if;
 end
 $do$;
+
+-- ============================================================
+-- Portfolio recommendation history
+-- ============================================================
+
+create table if not exists public.portfolio_recommendations (
+  id             bigserial primary key,
+  user_id        uuid not null references public.users(id) on delete cascade,
+  market_group   varchar(2) not null check (market_group in ('KR', 'US')),
+  risk_tolerance varchar(10) not null,
+  lang           varchar(2) not null default 'ko',
+  stocks         jsonb not null,
+  reasoning      text not null,
+  model          varchar(50) not null,
+  created_at     timestamptz not null default now()
+);
+
+create index if not exists idx_portfolio_recommendations_user_market
+  on public.portfolio_recommendations (user_id, market_group, created_at desc);
