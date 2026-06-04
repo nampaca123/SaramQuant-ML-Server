@@ -40,8 +40,10 @@ class KrDailyPriceCollector:
         last_date = self._get_market_last_date(market)
         dates = self._generate_dates(last_date)
         if dates is None:
-            logger.error(f"[KrDailyPrice] {market.value}: failed to fetch trading days, skipping")
-            return {}
+            raise RuntimeError(
+                f"{market.value}: failed to fetch trading days from KRX "
+                f"(empty/unauthenticated response)"
+            )
         if not dates:
             logger.info(f"[KrDailyPrice] {market.value} already up to date")
             return {}
@@ -64,6 +66,12 @@ class KrDailyPriceCollector:
 
             if i % 10 == 0 or i == len(dates):
                 logger.info(f"[KrDailyPrice] {market.value}: {i}/{len(dates)} days done")
+
+        if total == 0:
+            raise RuntimeError(
+                f"{market.value}: {len(dates)} trading day(s) returned by KRX "
+                f"but 0 price rows collected"
+            )
 
         logger.info(
             f"[KrDailyPrice] {market.value}: {trading_days} trading days, {total} records"

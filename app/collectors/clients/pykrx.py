@@ -19,6 +19,15 @@ COLUMN_MAP = {"시가": "open", "고가": "high", "저가": "low", "종가": "cl
 _RETRIES = 3
 _RETRY_WAIT = 3.0
 
+
+class KrxPasswordExpiredError(RuntimeError):
+    """KRX requires a password change (login _error_code CD010).
+
+    The credentials are correct but expired; KRX returns no data until the
+    password is reset at data.krx.co.kr and KRX_PASSWORD is updated.
+    """
+
+
 # ── KRX Login ──
 
 _session = requests.Session()
@@ -60,6 +69,15 @@ def _do_login() -> bool:
         resp = _session.post(_LOGIN_URL, data=payload, headers={**hdrs, "Referer": _LOGIN_PAGE}, timeout=15)
         data = resp.json()
         code = data.get("_error_code", "")
+
+    if code == "CD010":
+        logger.critical(
+            "[pykrx] KRX password expired (CD010): %s — reset it at "
+            "data.krx.co.kr and update KRX_PASSWORD. KR collection is halted "
+            "until then.",
+            data.get("_error_message", ""),
+        )
+        raise KrxPasswordExpiredError(data.get("_error_message", "CD010"))
 
     if code != "CD001":
         logger.error(f"[pykrx] KRX login failed: {data}")

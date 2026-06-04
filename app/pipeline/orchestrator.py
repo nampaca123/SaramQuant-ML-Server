@@ -53,25 +53,41 @@ class PipelineOrchestrator:
 
     def run_daily_kr(self) -> None:
         logger.info("[Pipeline] Starting KR daily pipeline")
-        collect_start = time.monotonic()
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            collect_future = pool.submit(self._collector.collect_all, "kr")
-            exchange_future = pool.submit(self._collect_exchange_rates)
-            collect_future.result()
-            exchange_future.result()
-        collect_ms = int((time.monotonic() - collect_start) * 1000)
-        logger.info(f"[Pipeline] KR collection done in {collect_ms}ms")
-        self._run_compute_pipeline("kr", collect_ms=collect_ms)
+        collect_step = self._collect_daily("kr", with_exchange=True)
+        self._run_compute_pipeline("kr", collect_step=collect_step)
         logger.info("[Pipeline] KR daily pipeline complete")
 
     def run_daily_us(self) -> None:
         logger.info("[Pipeline] Starting US daily pipeline")
-        collect_start = time.monotonic()
-        self._collector.collect_all("us")
-        collect_ms = int((time.monotonic() - collect_start) * 1000)
-        logger.info(f"[Pipeline] US collection done in {collect_ms}ms")
-        self._run_compute_pipeline("us", collect_ms=collect_ms)
+        collect_step = self._collect_daily("us", with_exchange=False)
+        self._run_compute_pipeline("us", collect_step=collect_step)
         logger.info("[Pipeline] US daily pipeline complete")
+
+    def _collect_daily(self, region: str, with_exchange: bool) -> StepResult:
+        """Run collection and report it as a pipeline step.
+
+        A raised exception or zero collected price rows (surfaced by the
+        collectors as an exception) is recorded as a failed `collection` step
+        so it is visible in audit_log instead of being silently swallowed.
+        """
+        start = time.monotonic()
+        try:
+            if with_exchange:
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    collect_future = pool.submit(self._collector.collect_all, region)
+                    exchange_future = pool.submit(self._collect_exchange_rates)
+                    collect_future.result()
+                    exchange_future.result()
+            else:
+                self._collector.collect_all(region)
+        except Exception as e:
+            ms = int((time.monotonic() - start) * 1000)
+            logger.error(f"[Pipeline] {region.upper()} collection failed: {e}", exc_info=True)
+            return StepResult("collection", False, ms, str(e))
+
+        ms = int((time.monotonic() - start) * 1000)
+        logger.info(f"[Pipeline] {region.upper()} collection done in {ms}ms")
+        return StepResult("collection", True, ms)
 
     def run_initial_kr(self) -> None:
         logger.info("[Pipeline] Starting KR initial pipeline")
@@ -101,14 +117,18 @@ class PipelineOrchestrator:
 
     # ── compute pipeline ──
 
-    def _run_compute_pipeline(self, command: str, collect_ms: int = 0) -> None:
+    def _run_compute_pipeline(self, command: str, collect_step: StepResult | None = None) -> None:
         region = command.replace("-initial", "")
         markets = REGION_CONFIG[region]["markets"]
         steps: list[StepResult] = []
         pipeline_start = time.monotonic()
 
-        if collect_ms > 0:
-            steps.append(StepResult("collection", True, collect_ms))
+        if collect_step is not None:
+            steps.append(collect_step)
+            if not collect_step.success:
+                logger.error("[Pipeline] Collection failed — skipping compute")
+                self._log_pipeline_audit(command, steps, pipeline_start)
+                return
 
         deactivate_start = time.monotonic()
         deactivate_ok = self._progressive_deactivate(markets)
