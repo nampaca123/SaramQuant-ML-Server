@@ -1,3 +1,6 @@
+from concurrent.futures import ThreadPoolExecutor
+
+import pandas as pd
 import pytest
 
 import app.db.lake_reader as lake_reader
@@ -163,3 +166,26 @@ def test_load_extensions_uses_baked_directory_without_installing(monkeypatch):
         "LOAD iceberg",
     ]
     assert not any(statement.startswith("INSTALL") for statement in connection.statements)
+
+
+@pytest.fixture
+def local_lake(monkeypatch):
+    """S3 시크릿과 확장 로드를 건너뛰고 인메모리 테이블만 갖춘 루트 커넥션을 세운다."""
+    monkeypatch.setattr(lake_reader, "load_extensions", lambda connection: None)
+    monkeypatch.setattr(lake_reader, "_mint_s3_secret", lambda connection: None)
+    monkeypatch.setattr(lake_reader, "_connection", None)
+    connection = lake_reader.get_connection()
+    connection.execute("CREATE TABLE prices AS SELECT 7 AS close")
+    yield connection
+    connection.close()
+
+
+def test_query_df_is_thread_safe_under_concurrent_calls(local_lake):
+    def run(_):
+        return lake_reader.query_df("SELECT close FROM prices")
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(run, range(8 * 25)))
+
+    assert all(isinstance(result, pd.DataFrame) for result in results)
+    assert all(result["close"].tolist() == [7] for result in results)
