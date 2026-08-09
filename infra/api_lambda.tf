@@ -21,10 +21,11 @@ locals {
       memory  = 2048
       timeout = 30
     }
+    # 256MB/5s에서는 컨테이너 init이 10초 캡을 넘겨 500이 났다(CPU가 메모리에 비례) — 1024MB/10s로 올린다
     "health" = {
       handler = "handle_health"
-      memory  = 256
-      timeout = 5
+      memory  = 1024
+      timeout = 10
     }
   }
 
