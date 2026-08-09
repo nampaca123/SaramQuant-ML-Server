@@ -25,11 +25,11 @@ AWS 레이크하우스(S3 + Iceberg + DuckDB/Athena) 위에서 배치와 API로 
 |---|---|---|
 | `kr` | 월–금 18:00 | `cron(0 9 ? * MON-FRI *)` |
 | `us` | 화–토 09:00 | `cron(0 0 ? * TUE-SAT *)` |
-| `kr-fs` / `us-fs` | 분기 4·5·8·11월 지정일 03:00 | 분기별 4규칙씩 |
+| `kr-fs` / `us-fs` | 분기 4·5·8·11월 지정일 `kr-fs` 03:00 / `us-fs` 04:00 | 분기별 4규칙씩 |
 | `kr-initial` / `us-initial` | 스케줄 없음 | SFN 수동 실행 (콜드 ETL) |
 
-- `us-fs`는 `run-summary/usa_fstatements.json`의 `status == ok && age < 72h` 신선도 게이트를 통과해야 fundamentals를 재계산한다(미통과 시 해당 단계만 soft-fail).
-- 배치는 단일 작성자를 전제한다(staging 테이블 공유, `stocks.id` 채번). 동시 실행 금지 — SFN이 보장한다.
+- `us-fs`는 `run-summary/usa_fstatements.json`의 `status == ok && age < 72h` 신선도 게이트를 통과해야 fundamentals를 재계산한다(미통과 시 fs 단계 soft-fail + fundamentals 스킵).
+- 배치는 단일 작성자를 전제한다(staging 테이블 공유, `stocks.id` 채번). SFN Standard는 동시 실행을 막지 않으므로, 겹칠 수 있는 스케줄은 서로 오프셋해 둔다(`us-fs`가 `kr-fs`보다 1시간 뒤).
 - 런당 1건의 런 레코드가 try/finally로 기록된다: `run_id`, 단계별 성공/소요시간, 입출력 건수, `status`.
 
 ## API

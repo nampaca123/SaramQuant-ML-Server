@@ -137,7 +137,11 @@ class PipelineOrchestrator:
 
     def _collect_fs(self, steps: list[StepResult], region: str) -> bool:
         logger.info(f"[Pipeline] Collecting {region.upper()} financial statements")
-        steps.append(self._safe_step("fs_collection", self._collect_fs_rows, region))
+        collect = self._safe_step("fs_collection", self._collect_fs_rows, region)
+        steps.append(collect)
+        if not collect.success:
+            logger.info("[Pipeline] skipping fundamentals recompute: fs_collection failed")
+            return False
         fundamentals = self._safe_step("fundamentals", self._compute_fundamentals, region)
         steps.append(fundamentals)
         return fundamentals.success

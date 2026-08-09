@@ -1,11 +1,18 @@
 # 10개 규칙 모두 ENABLED — 콜드 ETL 완주로 DISABLED 가드 해제
-# fs 크론은 분기 보고서 마감 다음 날 KST 03:00을 전일 UTC 18:00으로 환산한 값이다
+# fs 크론은 마감 다음 날 KST 03:00(kr) / 04:00(us)의 전일 UTC 환산 — us-fs를 1시간 늦춰 공유 staging 동시 접근을 피한다
 locals {
-  fs_crons = {
+  kr_fs_crons = {
     q1 = "cron(0 18 6 4 ? *)"
     q2 = "cron(0 18 21 5 ? *)"
     q3 = "cron(0 18 20 8 ? *)"
     q4 = "cron(0 18 20 11 ? *)"
+  }
+
+  us_fs_crons = {
+    q1 = "cron(0 19 6 4 ? *)"
+    q2 = "cron(0 19 21 5 ? *)"
+    q3 = "cron(0 19 20 8 ? *)"
+    q4 = "cron(0 19 20 11 ? *)"
   }
 
   pipeline_schedules = merge(
@@ -13,8 +20,8 @@ locals {
       "daily-kr" = { cron = "cron(0 9 ? * MON-FRI *)", command = "kr" }
       "daily-us" = { cron = "cron(0 0 ? * TUE-SAT *)", command = "us" }
     },
-    { for q, cron in local.fs_crons : "kr-fs-${q}" => { cron = cron, command = "kr-fs" } },
-    { for q, cron in local.fs_crons : "us-fs-${q}" => { cron = cron, command = "us-fs" } },
+    { for q, cron in local.kr_fs_crons : "kr-fs-${q}" => { cron = cron, command = "kr-fs" } },
+    { for q, cron in local.us_fs_crons : "us-fs-${q}" => { cron = cron, command = "us-fs" } },
   )
 }
 
