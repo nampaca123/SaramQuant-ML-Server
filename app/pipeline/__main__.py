@@ -2,7 +2,6 @@ import logging
 import sys
 
 from app.utils import setup_logging
-from app.db import close_pool
 from app.pipeline.orchestrator import PipelineOrchestrator
 
 COMMANDS = {"kr", "us", "kr-fs", "us-fs", "kr-initial", "us-initial"}
@@ -36,8 +35,6 @@ def main() -> int:
     except Exception as e:
         logger.error(f"[Pipeline] Failed: {e}", exc_info=True)
         return 1
-    finally:
-        close_pool()
 
     return 0
 

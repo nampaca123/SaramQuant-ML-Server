@@ -3,8 +3,6 @@ from datetime import date
 
 import numpy as np
 import pandas as pd
-from psycopg2.extensions import connection
-
 from app.db import (
     DailyPriceRepository,
     FactorRepository,
@@ -37,7 +35,7 @@ class FactorModelService:
     get_betas()  — load stored data, return {stock_id: factor_beta} for indicator computation
     """
 
-    def __init__(self, conn: connection):
+    def __init__(self, conn: object):
         self._conn = conn
         self._stock_repo = StockRepository(conn)
         self._price_repo = DailyPriceRepository(conn)

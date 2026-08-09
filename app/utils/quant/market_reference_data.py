@@ -2,7 +2,6 @@ import logging
 from decimal import Decimal
 
 import pandas as pd
-from psycopg2.extensions import connection
 
 from app.db import BenchmarkRepository, RiskFreeRateRepository
 from app.schema import Market, Benchmark, Country, Maturity
@@ -13,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def load_benchmark_returns(
-    conn: connection, markets: list[Market], limit: int = 300
+    conn: object, markets: list[Market], limit: int = 300
 ) -> dict[Benchmark, pd.Series]:
     repo = BenchmarkRepository(conn)
     benchmarks = {market_to_benchmark(m) for m in markets}
@@ -36,7 +35,7 @@ def load_benchmark_returns(
 
 
 def load_risk_free_rates(
-    conn: connection, markets: list[Market]
+    conn: object, markets: list[Market]
 ) -> dict[Country, float]:
     repo = RiskFreeRateRepository(conn)
     countries = {market_to_country(m) for m in markets}

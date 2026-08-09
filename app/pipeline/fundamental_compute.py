@@ -1,7 +1,5 @@
 import logging
 
-from psycopg2.extensions import connection
-
 from app.db import DailyPriceRepository
 from app.db.repositories.financial_statement import FinancialStatementRepository
 from app.db.repositories.fundamental import FundamentalRepository
@@ -12,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 class FundamentalComputeEngine:
-    def __init__(self, conn: connection):
+    def __init__(self, conn: object):
         self._conn = conn
         self._fs_repo = FinancialStatementRepository(conn)
         self._fund_repo = FundamentalRepository(conn)

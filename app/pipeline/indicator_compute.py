@@ -3,8 +3,6 @@ import os
 from concurrent.futures import ProcessPoolExecutor
 
 import pandas as pd
-from psycopg2.extensions import connection
-
 from app.db import DailyPriceRepository
 from app.db.repositories.indicator import IndicatorRepository
 from app.schema import Market
@@ -47,7 +45,7 @@ def _compute_chunk(stock_batch: list[tuple[int, list[tuple]]]) -> tuple[list[tup
 
 
 class IndicatorComputeEngine:
-    def __init__(self, conn: connection):
+    def __init__(self, conn: object):
         self._conn = conn
         self._price_repo = DailyPriceRepository(conn)
         self._indicator_repo = IndicatorRepository(conn)

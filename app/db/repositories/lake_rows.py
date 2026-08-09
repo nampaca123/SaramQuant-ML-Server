@@ -15,12 +15,22 @@ def columns_of(table: str) -> list[str]:
     return [name for name, _ in TABLES[table].columns]
 
 
+def decimal_columns(table: str) -> tuple[str, ...]:
+    return tuple(
+        name for name, athena_type in TABLES[table].columns if athena_type.startswith("decimal")
+    )
+
+
 def resolve_run_id(run_id: str | None) -> str:
     return run_id or os.environ.get("RUN_ID") or uuid4().hex[:12]
 
 
 def now_utc() -> pd.Timestamp:
     return pd.Timestamp.now(tz="UTC")
+
+
+def missing(value) -> bool:
+    return value is None or (not isinstance(value, str) and pd.isna(value))
 
 
 def to_date(value) -> date | None:
@@ -33,6 +43,24 @@ def to_decimal(value) -> Decimal | None:
     if value is None or pd.isna(value):
         return None
     return Decimal(str(value))
+
+
+def to_int(value) -> int | None:
+    return None if missing(value) else int(value)
+
+
+def to_float(value) -> float | None:
+    return None if missing(value) else float(value)
+
+
+def to_dict(row: pd.Series, decimals: tuple[str, ...] = ()) -> dict:
+    return {
+        key: to_decimal(value) if key in decimals
+        else to_date(value) if key == "date"
+        else None if missing(value)
+        else value
+        for key, value in row.items()
+    }
 
 
 def select(table: str, columns: str, where: str = "", params: list | None = None,

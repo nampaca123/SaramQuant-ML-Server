@@ -1,7 +1,7 @@
 import logging
 import numpy as np
 
-from app.db import get_connection, PortfolioRepository, StockRepository, DailyPriceRepository, BenchmarkRepository
+from app.db import get_connection, StockRepository, DailyPriceRepository, BenchmarkRepository
 from app.schema import Market, Benchmark
 from app.quant.portfolio.hypothetical_returns import build_from_prices
 from app.quant.portfolio.portfolio_risk_score import compute_risk_score
@@ -22,8 +22,8 @@ _NO_HOLDINGS = {"error": "No holdings"}
 class PortfolioAnalysisService:
 
     @staticmethod
-    def full_analysis(portfolio_id: int) -> dict:
-        holdings, market_group = PortfolioAnalysisService._load_context(portfolio_id)
+    def full_analysis(market_group: str, holdings: list[dict]) -> dict:
+        holdings = _resolve_holdings(holdings)
         if not holdings:
             return {k: _NO_HOLDINGS for k in (
                 "risk_score", "risk_decomposition", "diversification",
@@ -188,23 +188,29 @@ class PortfolioAnalysisService:
     # ── shared helpers ──
 
     @staticmethod
-    def _load_context(portfolio_id: int):
-        with get_connection() as conn:
-            repo = PortfolioRepository(conn)
-            holdings = repo.get_holdings(portfolio_id)
-            market_group = repo.get_portfolio_market_group(portfolio_id) or "UNKNOWN"
-        return holdings, market_group
-
-    @staticmethod
-    def _compute_weights(holdings) -> tuple[list[int], np.ndarray]:
-        stock_ids = [h.stock_id for h in holdings]
-        values = np.array([float(h.shares * h.avg_price) for h in holdings])
+    def _compute_weights(holdings: list[dict]) -> tuple[list[int], np.ndarray]:
+        stock_ids = [h["stock_id"] for h in holdings]
+        values = np.array([float(h["shares"]) * float(h["avg_price"]) for h in holdings])
         total = values.sum()
         weights = values / total if total > 0 else np.ones(len(values)) / len(values)
         return stock_ids, weights
 
 
 # ── module-level helpers ──
+
+
+def _resolve_holdings(holdings: list[dict]) -> list[dict]:
+    """호출부가 넘긴 holdings의 symbol+market을 stock_id로 해석한다."""
+    repo = StockRepository()
+    resolved = []
+    for holding in holdings or []:
+        found = repo.get_by_symbol(holding["symbol"], Market(holding["market"]))
+        if found is None:
+            logger.warning(f"[PortfolioAnalysis] Unknown holding: {holding.get('symbol')}")
+            continue
+        resolved.append({**holding, "stock_id": found[0]})
+    return resolved
+
 
 def _benchmark_vol_from_prices(bench_prices, lookback: int) -> float | None:
     if len(bench_prices) < 20:
