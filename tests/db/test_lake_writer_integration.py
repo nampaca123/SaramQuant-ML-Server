@@ -7,6 +7,7 @@ import pytest
 from app.db.athena_runner import run_query
 from app.db.lake_reader import invalidate_metadata_cache, query_df, scan
 from app.db.lake_writer import merge, snapshot_replace
+from tests.lake_guard import skip_destructive
 
 pytestmark = pytest.mark.integration
 
@@ -79,6 +80,7 @@ def test_merge_inserts_then_updates_same_keys(stocks_cleanup):
     ]
 
 
+@skip_destructive
 def test_snapshot_replace_roundtrip_on_risk_badges(risk_badges_cleanup):
     rows = pd.DataFrame(
         [

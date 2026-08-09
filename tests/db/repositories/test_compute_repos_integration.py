@@ -13,8 +13,10 @@ from app.db.repositories.financial_statement import FinancialStatementRepository
 from app.db.repositories.indicator import IndicatorRepository
 from app.db.repositories.risk_badge import RiskBadgeRepository
 from app.schema import FinancialStatement, Market, ReportType
+from tests.lake_guard import skip_destructive
 
-pytestmark = pytest.mark.integration
+# 모든 픽스처가 공유 테이블 전체 DELETE로 정리한다 — 모듈 전체가 파괴적이다
+pytestmark = [pytest.mark.integration, skip_destructive]
 
 STOCK_A, STOCK_B, STOCK_C = 999901, 999902, 999903
 KR_MARKETS = [Market.KR_KOSPI, Market.KR_KOSDAQ]

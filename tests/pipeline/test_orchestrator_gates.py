@@ -140,17 +140,23 @@ def test_us_gate_soft_fails_on_unusable_summary(monkeypatch, summary):
         fcs.FundamentalCollectionService().collect_all("us")
 
 
-def test_us_gate_soft_fail_is_recorded_as_failed_step_without_aborting(monkeypatch, written):
+def test_us_gate_soft_fail_skips_fundamentals_and_records_the_failed_step(monkeypatch, written):
     monkeypatch.setattr(fcs, "read_run_summary", lambda key: None)
     pipeline = _quiet_pipeline(monkeypatch)
-    monkeypatch.setattr(pipeline, "_compute_fundamentals", lambda region: 5)
+    fundamental_calls: list[str] = []
+    monkeypatch.setattr(
+        pipeline, "_compute_fundamentals",
+        lambda region: fundamental_calls.append(region) or 5,
+    )
 
     pipeline.run_collect_fs_us()
 
+    assert fundamental_calls == []
     assert len(written) == 1
-    assert written[0]["status"] == "partial"
+    assert written[0]["status"] == "error"
     assert written[0]["counts"]["fs_collection"]["failed"] == 1
-    assert written[0]["counts"]["fundamentals"] == {"ok": 1, "failed": 0, "out": 5}
+    assert "fundamentals" not in written[0]["counts"]
+    assert "fs_collection" in written[0]["cause"]
 
 
 # ── (c) 런 레코드 1회 기록 + counts ──
