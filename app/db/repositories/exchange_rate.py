@@ -1,8 +1,15 @@
+"""exchange_rates 레포지토리 — DuckDB(Iceberg) 조회 + Athena MERGE 쓰기. 단건 upsert도 1행 merge로 처리한다."""
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
-from dataclasses import dataclass
-from psycopg2.extensions import connection
-from psycopg2.extras import execute_values
+
+import pandas as pd
+
+from app.db import lake_writer
+from app.db.repositories import lake_rows
+
+TABLE = "exchange_rates"
+FX_COLUMNS = lake_rows.columns_of(TABLE)
 
 
 @dataclass
@@ -13,55 +20,30 @@ class ExchangeRateRow:
 
 
 class ExchangeRateRepository:
-    def __init__(self, conn: connection):
+    def __init__(self, conn: object | None = None):
         self._conn = conn
 
-    def upsert_batch(self, rows: list[ExchangeRateRow]) -> int:
+    def upsert_batch(self, rows: list[ExchangeRateRow], run_id: str | None = None) -> int:
         if not rows:
             return 0
-        query = """
-            INSERT INTO exchange_rates (pair, date, rate)
-            VALUES %s
-            ON CONFLICT (pair, date) DO UPDATE SET rate = EXCLUDED.rate
-        """
-        data = [(r.pair, r.date, r.rate) for r in rows]
-        with self._conn.cursor() as cur:
-            execute_values(cur, query, data)
-            return cur.rowcount
+        payload = pd.DataFrame(
+            [{"pair": r.pair, "date": r.date, "rate": r.rate} for r in rows]
+        ).drop_duplicates(subset=["pair", "date"], keep="last")
+        return lake_writer.merge(TABLE, payload[FX_COLUMNS], lake_rows.resolve_run_id(run_id))
+
+    def upsert_one(self, row: ExchangeRateRow, run_id: str | None = None) -> None:
+        self.upsert_batch([row], run_id)
 
     def get_latest_date(self, pair: str) -> date | None:
-        query = "SELECT MAX(date) FROM exchange_rates WHERE pair = %s"
-        with self._conn.cursor() as cur:
-            cur.execute(query, (pair,))
-            row = cur.fetchone()
-            return row[0] if row and row[0] else None
+        return lake_rows.max_date(TABLE, "pair = ?", [pair])
 
     def get_rate_on_or_before(self, pair: str, target_date: date) -> Decimal | None:
-        query = """
-            SELECT rate FROM exchange_rates
-            WHERE pair = %s AND date <= %s
-            ORDER BY date DESC LIMIT 1
-        """
-        with self._conn.cursor() as cur:
-            cur.execute(query, (pair, target_date))
-            row = cur.fetchone()
-            return row[0] if row else None
-
-    def upsert_one(self, row: ExchangeRateRow) -> None:
-        query = """
-            INSERT INTO exchange_rates (pair, date, rate)
-            VALUES (%s, %s, %s)
-            ON CONFLICT (pair, date) DO UPDATE SET rate = EXCLUDED.rate
-        """
-        with self._conn.cursor() as cur:
-            cur.execute(query, (row.pair, row.date, row.rate))
+        df = lake_rows.select(
+            TABLE, "rate", "pair = ? AND date <= ?", [pair, target_date],
+            " ORDER BY date DESC LIMIT 1",
+        )
+        return lake_rows.to_decimal(lake_rows.scalar(df, "rate"))
 
     def get_latest_rate(self, pair: str) -> Decimal | None:
-        query = """
-            SELECT rate FROM exchange_rates
-            WHERE pair = %s ORDER BY date DESC LIMIT 1
-        """
-        with self._conn.cursor() as cur:
-            cur.execute(query, (pair,))
-            row = cur.fetchone()
-            return row[0] if row else None
+        df = lake_rows.select(TABLE, "rate", "pair = ?", [pair], " ORDER BY date DESC LIMIT 1")
+        return lake_rows.to_decimal(lake_rows.scalar(df, "rate"))

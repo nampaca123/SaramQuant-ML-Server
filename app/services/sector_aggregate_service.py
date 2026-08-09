@@ -1,8 +1,6 @@
 import logging
 from datetime import date
 
-from psycopg2.extensions import connection
-
 from app.db import FactorRepository
 from app.schema import Market
 
@@ -10,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 
 class SectorAggregateService:
-    def __init__(self, conn: connection):
+    def __init__(self, conn: object):
         self._repo = FactorRepository(conn)
 
     def compute(self, markets: list[Market]) -> int:

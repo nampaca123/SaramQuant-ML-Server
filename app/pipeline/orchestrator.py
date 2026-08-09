@@ -3,9 +3,10 @@ import time
 from typing import Callable, Any
 from concurrent.futures import ThreadPoolExecutor
 
-from app.db import get_connection, DailyPriceRepository
+from app.db import get_connection, DailyPriceRepository, lake_writer
 from app.db.repositories.stock import StockRepository
 from app.db.repositories.indicator import COLUMNS as _IND_COLUMNS
+from app.db.repositories.lake_rows import resolve_run_id
 from app.schema import Market
 from app.services import PriceCollectionService
 from app.services.price_collection_service import REGION_CONFIG
@@ -23,6 +24,16 @@ logger = logging.getLogger(__name__)
 
 PriceMaps = dict[Market, dict[int, list[tuple]]]
 _SAFETY_THRESHOLD = 0.10
+
+FS_TABLES = ["stocks", "financial_statements", "stock_fundamentals"]
+COMPUTE_TABLES = FS_TABLES + [
+    "daily_prices", "benchmark_daily_prices", "risk_free_rates", "exchange_rates",
+    "stock_indicators", "factor_exposures", "sector_aggregates", "risk_badges",
+]
+
+
+def _ms(start: float) -> int:
+    return int((time.monotonic() - start) * 1000)
 
 
 def _indicator_rows_to_dicts(
@@ -48,27 +59,95 @@ class PipelineOrchestrator:
         self._collector = PriceCollectionService()
         self._fund_collector = FundamentalCollectionService()
         self._exchange_rate_collector = ExchangeRateCollector()
+        self._run_id = resolve_run_id(None)
 
     # ── public entry points ──
 
     def run_daily_kr(self) -> None:
-        logger.info("[Pipeline] Starting KR daily pipeline")
-        collect_step = self._collect_daily("kr", with_exchange=True)
-        self._run_compute_pipeline("kr", collect_step=collect_step)
-        logger.info("[Pipeline] KR daily pipeline complete")
+        self._run_command("kr", lambda steps: self._daily(steps, "kr", True), COMPUTE_TABLES)
 
     def run_daily_us(self) -> None:
-        logger.info("[Pipeline] Starting US daily pipeline")
-        collect_step = self._collect_daily("us", with_exchange=False)
-        self._run_compute_pipeline("us", collect_step=collect_step)
-        logger.info("[Pipeline] US daily pipeline complete")
+        self._run_command("us", lambda steps: self._daily(steps, "us", False), COMPUTE_TABLES)
+
+    def run_initial_kr(self) -> None:
+        self._run_command("kr-initial", lambda steps: self._initial(steps, "kr"), COMPUTE_TABLES)
+
+    def run_initial_us(self) -> None:
+        self._run_command("us-initial", lambda steps: self._initial(steps, "us"), COMPUTE_TABLES)
+
+    def run_collect_fs_kr(self) -> None:
+        self._run_command("kr-fs", lambda steps: self._collect_fs(steps, "kr"), FS_TABLES)
+
+    def run_collect_fs_us(self) -> None:
+        self._run_command("us-fs", lambda steps: self._collect_fs(steps, "us"), FS_TABLES)
+
+    # ── run wrapper (run record is written exactly once, even on failure) ──
+
+    def _run_command(
+        self, command: str, body: Callable[[list[StepResult]], bool], tables: list[str],
+    ) -> None:
+        steps: list[StepResult] = []
+        start = time.monotonic()
+        aborted = True
+        try:
+            aborted = not body(steps)
+        except Exception as e:
+            steps.append(StepResult("pipeline", False, _ms(start), str(e)))
+            raise
+        finally:
+            if any(step.success for step in steps):
+                lake_writer.optimize_and_vacuum(tables)
+            self._log_pipeline_audit(command, steps, start, aborted)
+
+    def _log_pipeline_audit(
+        self, command: str, steps: list[StepResult], start: float, aborted: bool,
+    ) -> None:
+        meta = PipelineMetadata(
+            command=command,
+            steps=steps,
+            total_duration_ms=_ms(start),
+            aborted=aborted,
+            run_id=self._run_id,
+        )
+        try:
+            log_pipeline(meta)
+        except Exception:
+            logger.exception("Failed to log pipeline audit")
+
+    # ── flows ──
+
+    def _daily(self, steps: list[StepResult], region: str, with_exchange: bool) -> bool:
+        logger.info(f"[Pipeline] Starting {region.upper()} daily pipeline")
+        collect = self._collect_daily(region, with_exchange)
+        steps.append(collect)
+        if not collect.success:
+            logger.error("[Pipeline] Collection failed — skipping compute")
+            return False
+        return self._compute(steps, region)
+
+    def _initial(self, steps: list[StepResult], region: str) -> bool:
+        logger.info(f"[Pipeline] Starting {region.upper()} initial pipeline")
+        collect = self._safe_step("collection", self._collect_prices, region)
+        steps.append(collect)
+        if not collect.success:
+            logger.error("[Pipeline] Collection failed — skipping compute")
+            return False
+        steps.append(self._safe_step("fs_collection", self._collect_fs_rows, region))
+        return self._compute(steps, region)
+
+    def _collect_fs(self, steps: list[StepResult], region: str) -> bool:
+        logger.info(f"[Pipeline] Collecting {region.upper()} financial statements")
+        steps.append(self._safe_step("fs_collection", self._collect_fs_rows, region))
+        fundamentals = self._safe_step("fundamentals", self._compute_fundamentals, region)
+        steps.append(fundamentals)
+        return fundamentals.success
 
     def _collect_daily(self, region: str, with_exchange: bool) -> StepResult:
         """Run collection and report it as a pipeline step.
 
         A raised exception or zero collected price rows (surfaced by the
         collectors as an exception) is recorded as a failed `collection` step
-        so it is visible in audit_log instead of being silently swallowed.
+        so it is visible in the run record instead of being silently swallowed.
         """
         start = time.monotonic()
         try:
@@ -76,147 +155,93 @@ class PipelineOrchestrator:
                 with ThreadPoolExecutor(max_workers=2) as pool:
                     collect_future = pool.submit(self._collector.collect_all, region)
                     exchange_future = pool.submit(self._collect_exchange_rates)
-                    collect_future.result()
+                    results = collect_future.result()
                     exchange_future.result()
             else:
-                self._collector.collect_all(region)
+                results = self._collector.collect_all(region)
         except Exception as e:
-            ms = int((time.monotonic() - start) * 1000)
             logger.error(f"[Pipeline] {region.upper()} collection failed: {e}", exc_info=True)
-            return StepResult("collection", False, ms, str(e))
+            return StepResult("collection", False, _ms(start), str(e))
 
-        ms = int((time.monotonic() - start) * 1000)
-        logger.info(f"[Pipeline] {region.upper()} collection done in {ms}ms")
-        return StepResult("collection", True, ms)
-
-    def run_initial_kr(self) -> None:
-        logger.info("[Pipeline] Starting KR initial pipeline")
-        self._collector.collect_all("kr")
-        self._fund_collector.collect_all("kr")
-        self._run_compute_pipeline("kr-initial")
-        logger.info("[Pipeline] KR initial pipeline complete")
-
-    def run_initial_us(self) -> None:
-        logger.info("[Pipeline] Starting US initial pipeline")
-        self._collector.collect_all("us")
-        self._fund_collector.collect_all("us")
-        self._run_compute_pipeline("us-initial")
-        logger.info("[Pipeline] US initial pipeline complete")
-
-    def run_collect_fs_kr(self) -> None:
-        logger.info("[Pipeline] Collecting KR financial statements")
-        self._fund_collector.collect_all("kr")
-        self._compute_fundamentals("kr")
-        logger.info("[Pipeline] KR financial statement pipeline complete")
-
-    def run_collect_fs_us(self) -> None:
-        logger.info("[Pipeline] Collecting US financial statements")
-        self._fund_collector.collect_all("us")
-        self._compute_fundamentals("us")
-        logger.info("[Pipeline] US financial statement pipeline complete")
+        collected = sum(results.values())
+        logger.info(f"[Pipeline] {region.upper()} collection done: {collected} rows")
+        return StepResult("collection", True, _ms(start), output_count=collected)
 
     # ── compute pipeline ──
 
-    def _run_compute_pipeline(self, command: str, collect_step: StepResult | None = None) -> None:
-        region = command.replace("-initial", "")
+    def _compute(self, steps: list[StepResult], region: str) -> bool:
         markets = REGION_CONFIG[region]["markets"]
-        steps: list[StepResult] = []
-        pipeline_start = time.monotonic()
 
-        if collect_step is not None:
-            steps.append(collect_step)
-            if not collect_step.success:
-                logger.error("[Pipeline] Collection failed — skipping compute")
-                self._log_pipeline_audit(command, steps, pipeline_start)
-                return
-
-        deactivate_start = time.monotonic()
-        deactivate_ok = self._progressive_deactivate(markets)
-        steps.append(StepResult(
-            "progressive_deactivate",
-            deactivate_ok,
-            int((time.monotonic() - deactivate_start) * 1000),
-            None if deactivate_ok else "safety_check_failed",
-        ))
-        if not deactivate_ok:
-            self._log_pipeline_audit(command, steps, pipeline_start)
-            return
+        deactivate = self._progressive_deactivate(region)
+        steps.append(deactivate)
+        if not deactivate.success:
+            return False
 
         load_start = time.monotonic()
         price_maps = self._load_prices(markets)
         steps.append(StepResult(
-            "load_prices", True, int((time.monotonic() - load_start) * 1000),
+            "load_prices", True, _ms(load_start),
+            output_count=sum(len(pm) for pm in price_maps.values()),
         ))
 
         fund = self._safe_step("fundamentals", self._compute_fundamentals, region, price_maps)
         steps.append(fund)
-
-        if fund.success:
-            with ThreadPoolExecutor(max_workers=2) as pool:
-                factor_future = pool.submit(self._safe_step, "factors", self._compute_factors, region, price_maps)
-                sector_agg_future = pool.submit(self._safe_step, "sector_agg", self._compute_sector_aggregates, region)
-                factor = factor_future.result()
-                sector_agg = sector_agg_future.result()
-            steps.extend([factor, sector_agg])
-
-            if factor.success:
-                self._run_indicators_and_badges(region, markets, price_maps, steps)
-        else:
+        if not fund.success:
             steps.append(StepResult("factors", False, 0, "skipped"))
             logger.error("[Pipeline] Fundamentals failed — skipping factors/indicators/risk_badges")
+            self._run_integrity_check(region)
+            return False
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            factor_future = pool.submit(
+                self._safe_step, "factors", self._compute_factors, region, price_maps)
+            sector_agg_future = pool.submit(
+                self._safe_step, "sector_agg", self._compute_sector_aggregates, region)
+            factor = factor_future.result()
+            sector_agg = sector_agg_future.result()
+        steps.extend([factor, sector_agg])
+
+        if factor.success:
+            self._run_indicators_and_badges(region, markets, price_maps, steps)
 
         self._run_integrity_check(region)
-        self._log_pipeline_audit(command, steps, pipeline_start)
+        return True
 
-    def _log_pipeline_audit(self, command: str, steps: list[StepResult], pipeline_start: float) -> None:
-        meta = PipelineMetadata(
-            command=command,
-            steps=steps,
-            total_duration_ms=int((time.monotonic() - pipeline_start) * 1000),
-        )
+    # ── progressive deactivation (single MERGE) ──
+
+    def _progressive_deactivate(self, region: str) -> StepResult:
+        start = time.monotonic()
         try:
-            log_pipeline(meta)
-        except Exception:
-            logger.exception("Failed to log pipeline audit")
+            changes, summary = StockRepository().compute_deactivation(
+                region, self._collector.active_symbols,
+            )
+            if not self._safety_check(region, summary):
+                return StepResult(
+                    "progressive_deactivate", False, _ms(start), "safety_check_failed",
+                    input_count=summary["total"], output_count=0,
+                )
+            merged = lake_writer.merge("stocks", changes, self._run_id)
+            logger.info(
+                f"[Pipeline] Deactivation applied to {region}: "
+                f"{summary['deactivated']} deactivated, {summary['reactivated']} reactivated, "
+                f"{merged} rows merged"
+            )
+            return StepResult(
+                "progressive_deactivate", True, _ms(start),
+                input_count=summary["total"], output_count=merged,
+            )
+        except Exception as e:
+            logger.error(f"[Pipeline] progressive_deactivate failed: {e}", exc_info=True)
+            return StepResult("progressive_deactivate", False, _ms(start), str(e))
 
-    # ── progressive deactivation (single transaction) ──
-
-    def _progressive_deactivate(self, markets: list[Market]) -> bool:
-        with get_connection() as conn:
-            repo = StockRepository(conn)
-
-            for market in markets:
-                symbols = self._collector.active_symbols.get(market, set())
-                reactivated = repo.reactivate_listed_stocks(market, symbols)
-                if reactivated:
-                    logger.info(f"[Pipeline] Reactivated {reactivated} stocks in {market.value}")
-
-                no_price = repo.deactivate_no_price_stocks(market)
-                if no_price:
-                    logger.info(f"[Pipeline] Deactivated {no_price} no-price stocks in {market.value}")
-
-                no_sector = repo.deactivate_no_sector_stocks(market)
-                if no_sector:
-                    logger.info(f"[Pipeline] Deactivated {no_sector} no-sector stocks in {market.value}")
-
-                no_fs = repo.deactivate_no_fs_stocks(market)
-                if no_fs:
-                    logger.info(f"[Pipeline] Deactivated {no_fs} no-FS stocks in {market.value}")
-
-            if not self._safety_check(repo, markets):
-                conn.rollback()
-                return False
-
-            conn.commit()
-            return True
-
-    def _safety_check(self, repo: StockRepository, markets: list[Market]) -> bool:
-        total, active = repo.count_by_activity(markets)
-        ratio = active / total if total > 0 else 0
+    @staticmethod
+    def _safety_check(region: str, summary: dict[str, int]) -> bool:
+        total, active = summary["total"], summary["active_after"]
+        ratio = active / total if total > 0 else 0.0
         if ratio < _SAFETY_THRESHOLD:
             logger.error(
-                f"[Pipeline] Safety check FAILED: {active}/{total} active ({ratio:.1%}). "
-                f"Did you forget to run the initial pipeline? Aborting compute."
+                f"[Pipeline] Safety check FAILED for {region}: {active}/{total} would stay "
+                f"active ({ratio:.1%}). Skipping the stocks merge and aborting compute."
             )
             return False
         logger.info(f"[Pipeline] Safety check OK: {active}/{total} active ({ratio:.1%})")
@@ -238,13 +263,14 @@ class PipelineOrchestrator:
     def _safe_step(self, name: str, fn: Callable[..., Any], *args: Any) -> StepResult:
         start = time.monotonic()
         try:
-            fn(*args)
-            duration = int((time.monotonic() - start) * 1000)
-            return StepResult(name=name, success=True, duration_ms=duration)
+            result = fn(*args)
         except Exception as e:
-            duration = int((time.monotonic() - start) * 1000)
             logger.error(f"[Pipeline] Step '{name}' failed: {e}", exc_info=True)
-            return StepResult(name=name, success=False, duration_ms=duration, error=str(e))
+            return StepResult(name, False, _ms(start), str(e))
+        return StepResult(
+            name, True, _ms(start),
+            output_count=result if isinstance(result, int) else None,
+        )
 
     # ── indicators + risk_badges (in-memory handoff) ──
 
@@ -259,12 +285,11 @@ class PipelineOrchestrator:
                 engine = IndicatorComputeEngine(conn)
                 ind_rows, stock_market_map = engine.compute(markets, price_maps)
             steps.append(StepResult(
-                "indicators", True, int((time.monotonic() - ind_start) * 1000),
+                "indicators", True, _ms(ind_start),
+                input_count=len(stock_market_map), output_count=len(ind_rows),
             ))
         except Exception as e:
-            steps.append(StepResult(
-                "indicators", False, int((time.monotonic() - ind_start) * 1000), str(e),
-            ))
+            steps.append(StepResult("indicators", False, _ms(ind_start), str(e)))
             logger.error(f"[Pipeline] indicators failed: {e}", exc_info=True)
             return
 
@@ -276,52 +301,62 @@ class PipelineOrchestrator:
             badge_step = self._safe_step("risk_badges", self._compute_risk_badges, region, ind_dicts)
             steps.append(badge_step)
             try:
-                persist_future.result()
+                persisted = persist_future.result()
                 steps.append(StepResult(
-                    "indicators_persist", True,
-                    int((time.monotonic() - persist_start) * 1000),
+                    "indicators_persist", True, _ms(persist_start),
+                    input_count=len(ind_rows), output_count=persisted,
                 ))
             except Exception as e:
                 steps.append(StepResult(
-                    "indicators_persist", False,
-                    int((time.monotonic() - persist_start) * 1000), str(e),
+                    "indicators_persist", False, _ms(persist_start), str(e),
                 ))
-                logger.exception("[Pipeline] Failed to persist indicators to DB")
+                logger.exception("[Pipeline] Failed to persist indicators")
 
-    def _persist_indicators(self, rows: list[tuple], region: str) -> None:
+    def _persist_indicators(self, rows: list[tuple], region: str) -> int:
         markets = REGION_CONFIG[region]["markets"]
         with get_connection() as conn:
             engine = IndicatorComputeEngine(conn)
             count = engine.persist(rows, markets)
             logger.info(f"[Pipeline] Persisted {count} indicator rows")
+            return count
 
     # ── individual compute steps ──
 
-    def _compute_fundamentals(self, region: str, price_maps: PriceMaps | None = None) -> None:
+    def _collect_prices(self, region: str) -> int:
+        return sum(self._collector.collect_all(region).values())
+
+    def _collect_fs_rows(self, region: str) -> int | None:
+        return self._fund_collector.collect_all(region).get("success")
+
+    def _compute_fundamentals(self, region: str, price_maps: PriceMaps | None = None) -> int:
         markets = REGION_CONFIG[region]["markets"]
         with get_connection() as conn:
             engine = FundamentalComputeEngine(conn)
             count = engine.run(markets, price_maps)
             logger.info(f"[Pipeline] Computed {count} fundamental rows")
+            return count
 
-    def _compute_factors(self, region: str, price_maps: PriceMaps | None = None) -> None:
+    def _compute_factors(self, region: str, price_maps: PriceMaps | None = None) -> int:
         markets = REGION_CONFIG[region]["markets"]
         with get_connection() as conn:
             engine = FactorComputeEngine(conn)
             count = engine.run(markets, price_maps)
             logger.info(f"[Pipeline] Computed {count} factor exposure rows")
+            return count
 
-    def _compute_sector_aggregates(self, region: str) -> None:
+    def _compute_sector_aggregates(self, region: str) -> int:
         markets = REGION_CONFIG[region]["markets"]
         with get_connection() as conn:
             engine = SectorAggregateComputeEngine(conn)
             count = engine.run(markets)
             logger.info(f"[Pipeline] Computed {count} sector aggregate rows")
+            return count
 
     def _compute_risk_badges(
         self, region: str, ind_dicts: dict[str, dict[int, dict]] | None = None,
-    ) -> None:
+    ) -> int:
         markets = REGION_CONFIG[region]["markets"]
+        total = 0
         with get_connection() as conn:
             from app.services.risk_badge_service import RiskBadgeService
             from app.db.repositories.risk_badge import RiskBadgeRepository
@@ -329,8 +364,8 @@ class PipelineOrchestrator:
             for market in markets:
                 indicators = ind_dicts.get(market.value) if ind_dicts else None
                 badges = service.compute_batch(market, indicators=indicators)
-                RiskBadgeRepository(conn).upsert_batch(badges)
-            conn.commit()
+                total += RiskBadgeRepository(conn).upsert_batch(badges, self._run_id)
+        return total
 
     def _run_integrity_check(self, region: str) -> None:
         markets = REGION_CONFIG[region]["markets"]

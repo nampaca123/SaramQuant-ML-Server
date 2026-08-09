@@ -1,7 +1,8 @@
 import logging
 import numpy as np
 
-from app.db import get_connection, DailyPriceRepository, PortfolioRepository, StockRepository
+from app.db import get_connection, DailyPriceRepository, StockRepository
+from app.schema import Market
 from app.quant.simulation import (
     generate_portfolio_bootstrap_paths,
     generate_correlated_gbm_paths,
@@ -21,7 +22,8 @@ MIN_DATA_POINTS = 60
 class PortfolioSimulationService:
     @staticmethod
     def run(
-        portfolio_id: int,
+        market_group: str,
+        holdings: list[dict],
         days: int = DEFAULT_DAYS,
         num_simulations: int = DEFAULT_NUM_SIMULATIONS,
         confidence: float = DEFAULT_CONFIDENCE,
@@ -31,12 +33,12 @@ class PortfolioSimulationService:
         if method not in METHODS:
             raise ValueError(f"method must be one of {METHODS}")
 
-        holdings, stock_info = PortfolioSimulationService._load_holdings(portfolio_id)
+        holdings, stock_info = PortfolioSimulationService._resolve_holdings(holdings)
         if not holdings:
             raise ValueError("Portfolio has no holdings")
 
-        stock_ids = [h.stock_id for h in holdings]
-        shares_arr = np.array([float(h.shares) for h in holdings])
+        stock_ids = [h["stock_id"] for h in holdings]
+        shares_arr = np.array([float(h["shares"]) for h in holdings])
 
         returns_matrix, current_prices, common_dates, excluded = (
             PortfolioSimulationService._build_returns_matrix(stock_ids, lookback)
@@ -66,7 +68,6 @@ class PortfolioSimulationService:
             )
 
         stats = simulation_summary(paths, confidence)
-        market_group = PortfolioSimulationService._get_market_group(portfolio_id)
         current_value = float((active_current * active_shares).sum())
 
         active_stock_ids = [sid for sid in stock_ids if sid not in excluded]
@@ -78,7 +79,6 @@ class PortfolioSimulationService:
         return {
             "target": {
                 "type": "portfolio",
-                "portfolio_id": portfolio_id,
                 "market_group": market_group,
                 "holdings_count": len(active_stock_ids),
                 "current_value": round(current_value, 2),
@@ -104,17 +104,21 @@ class PortfolioSimulationService:
         }
 
     @staticmethod
-    def _load_holdings(portfolio_id: int):
-        with get_connection() as conn:
-            repo = PortfolioRepository(conn)
-            holdings = repo.get_holdings(portfolio_id)
-            stock_repo = StockRepository(conn)
-            stock_info = {}
-            for h in holdings:
-                info = stock_repo.find_by_id(h.stock_id)
-                if info:
-                    stock_info[h.stock_id] = info
-        return holdings, stock_info
+    def _resolve_holdings(holdings: list[dict]):
+        """호출부가 넘긴 holdings의 symbol+market을 stock_id로 해석한다."""
+        stock_repo = StockRepository()
+        resolved, stock_info = [], {}
+        for h in holdings or []:
+            found = stock_repo.get_by_symbol(h["symbol"], Market(h["market"]))
+            if found is None:
+                logger.warning(f"[PortfolioSimulation] Unknown holding: {h.get('symbol')}")
+                continue
+            stock_id, symbol, name, market = found
+            resolved.append({**h, "stock_id": stock_id})
+            stock_info[stock_id] = {
+                "id": stock_id, "symbol": symbol, "name": name, "market": market.value,
+            }
+        return resolved, stock_info
 
     @staticmethod
     def _build_returns_matrix(stock_ids: list[int], lookback: int):
@@ -160,10 +164,3 @@ class PortfolioSimulationService:
         current_prices = price_matrix[-1]
 
         return returns_matrix, current_prices, common_dates[1:], list(excluded)
-
-    @staticmethod
-    def _get_market_group(portfolio_id: int) -> str:
-        with get_connection() as conn:
-            repo = PortfolioRepository(conn)
-            mg = repo.get_portfolio_market_group(portfolio_id)
-        return mg or "UNKNOWN"

@@ -3,8 +3,6 @@ from dataclasses import asdict
 from datetime import date
 from statistics import median
 
-from psycopg2.extensions import connection
-
 from app.db.repositories.factor import FactorRepository
 from app.db.repositories.fundamental import FundamentalRepository
 from app.db.repositories.indicator import IndicatorRepository
@@ -24,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 class RiskBadgeService:
-    def __init__(self, conn: connection):
+    def __init__(self, conn: object):
         self._conn = conn
         self._ind_repo = IndicatorRepository(conn)
         self._fund_repo = FundamentalRepository(conn)

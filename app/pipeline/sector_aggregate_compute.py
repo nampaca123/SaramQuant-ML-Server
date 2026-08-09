@@ -1,7 +1,5 @@
 import logging
 
-from psycopg2.extensions import connection
-
 from app.schema import Market
 from app.services.sector_aggregate_service import SectorAggregateService
 
@@ -9,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 
 class SectorAggregateComputeEngine:
-    def __init__(self, conn: connection):
+    def __init__(self, conn: object):
         self._service = SectorAggregateService(conn)
         self._conn = conn
 

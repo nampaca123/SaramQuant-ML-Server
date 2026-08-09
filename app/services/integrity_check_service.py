@@ -1,8 +1,6 @@
 import logging
 from dataclasses import dataclass
 
-from psycopg2.extensions import connection
-
 from app.db import StockRepository
 from app.schema import Market
 
@@ -21,7 +19,7 @@ class MarketIntegrityReport:
 
 
 class IntegrityCheckService:
-    def __init__(self, conn: connection):
+    def __init__(self, conn: object):
         self._repo = StockRepository(conn)
 
     def check(self, markets: list[Market]) -> list[MarketIntegrityReport]:

@@ -3,8 +3,6 @@ import os
 from concurrent.futures import ProcessPoolExecutor
 
 import pandas as pd
-from psycopg2.extensions import connection
-
 from app.db import DailyPriceRepository
 from app.db.repositories.indicator import IndicatorRepository
 from app.schema import Market
@@ -47,7 +45,7 @@ def _compute_chunk(stock_batch: list[tuple[int, list[tuple]]]) -> tuple[list[tup
 
 
 class IndicatorComputeEngine:
-    def __init__(self, conn: connection):
+    def __init__(self, conn: object):
         self._conn = conn
         self._price_repo = DailyPriceRepository(conn)
         self._indicator_repo = IndicatorRepository(conn)
@@ -117,10 +115,7 @@ class IndicatorComputeEngine:
         return rows, stock_market_map
 
     def persist(self, rows: list[tuple], markets: list[Market]) -> int:
-        deleted = self._indicator_repo.delete_by_markets(markets)
-        logger.info(f"[Compute] Deleted {deleted} old indicator rows")
-
-        inserted = self._indicator_repo.insert_batch(rows)
-        self._conn.commit()
-        logger.info(f"[Compute] Inserted {inserted} indicator rows")
+        # insert_batch가 시장 범위를 스스로 비우고 채우므로 별도 delete는 하지 않는다.
+        inserted = self._indicator_repo.insert_batch(rows, markets=markets)
+        logger.info(f"[Compute] Replaced {inserted} indicator rows")
         return inserted

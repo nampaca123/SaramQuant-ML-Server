@@ -3,7 +3,6 @@ import time
 from functools import wraps
 from typing import Callable, TypeVar, ParamSpec
 from requests.exceptions import RequestException
-from psycopg2 import OperationalError, InterfaceError
 
 logger = logging.getLogger(__name__)
 
@@ -12,8 +11,6 @@ R = TypeVar("R")
 
 RETRYABLE_EXCEPTIONS = (
     RequestException,
-    OperationalError,
-    InterfaceError,
     TimeoutError,
     ConnectionError,
 )

@@ -1,33 +1,36 @@
+"""benchmark_daily_prices 레포지토리 — DuckDB(Iceberg) 조회 + Athena MERGE 쓰기."""
 from datetime import date
-from psycopg2.extensions import connection
-from psycopg2.extras import execute_values
+
+import pandas as pd
+
+from app.db import lake_writer
+from app.db.repositories import lake_rows
 from app.schema import Benchmark, BenchmarkPrice
+
+TABLE = "benchmark_daily_prices"
+BENCHMARK_COLUMNS = lake_rows.columns_of(TABLE)
 
 
 class BenchmarkRepository:
-    def __init__(self, conn: connection):
+    def __init__(self, conn: object | None = None):
         self._conn = conn
 
-    def upsert_batch(self, prices: list[BenchmarkPrice]) -> int:
+    def upsert_batch(self, prices: list[BenchmarkPrice], run_id: str | None = None) -> int:
         if not prices:
             return 0
-        query = """
-            INSERT INTO benchmark_daily_prices (benchmark, date, close)
-            VALUES %s
-            ON CONFLICT (benchmark, date) DO UPDATE SET
-                close = EXCLUDED.close
-        """
-        data = [(p.benchmark.value, p.date, p.close) for p in prices]
-        with self._conn.cursor() as cur:
-            execute_values(cur, query, data)
-            return cur.rowcount
+        rows = pd.DataFrame(
+            [
+                {"benchmark": p.benchmark.value, "date": p.date, "close": p.close}
+                for p in prices
+            ]
+        ).drop_duplicates(subset=["benchmark", "date"], keep="last")
+        rows["created_at"] = lake_rows.now_utc()
+        return lake_writer.merge(
+            TABLE, rows[BENCHMARK_COLUMNS], lake_rows.resolve_run_id(run_id)
+        )
 
     def get_latest_date(self, benchmark: Benchmark) -> date | None:
-        query = "SELECT MAX(date) FROM benchmark_daily_prices WHERE benchmark = %s"
-        with self._conn.cursor() as cur:
-            cur.execute(query, (benchmark.value,))
-            result = cur.fetchone()
-            return result[0] if result and result[0] else None
+        return lake_rows.max_date(TABLE, "benchmark = ?", [benchmark.value])
 
     def get_prices(
         self,
@@ -36,54 +39,32 @@ class BenchmarkRepository:
         end_date: date | None = None,
         limit: int | None = None
     ) -> list[BenchmarkPrice]:
-        conditions = ["benchmark = %s"]
-        params: list = [benchmark.value]
-
-        if start_date:
-            conditions.append("date >= %s")
-            params.append(start_date)
-        if end_date:
-            conditions.append("date <= %s")
-            params.append(end_date)
-
-        where_clause = " AND ".join(conditions)
-        limit_clause = f"LIMIT {limit}" if limit else ""
-
-        query = f"""
-            SELECT benchmark, date, close
-            FROM benchmark_daily_prices
-            WHERE {where_clause}
-            ORDER BY date DESC
-            {limit_clause}
-        """
-
-        with self._conn.cursor() as cur:
-            cur.execute(query, tuple(params))
-            return [
-                BenchmarkPrice(
-                    benchmark=Benchmark(row[0]),
-                    date=row[1],
-                    close=row[2]
-                )
-                for row in cur.fetchall()
-            ]
+        conditions, params = lake_rows.date_filters(start_date, end_date)
+        conditions.insert(0, "benchmark = ?")
+        params.insert(0, benchmark.value)
+        df = lake_rows.select(
+            TABLE,
+            "benchmark, date, close",
+            " AND ".join(conditions),
+            params,
+            f" ORDER BY date DESC{lake_rows.limit_clause(limit)}",
+        )
+        return [
+            BenchmarkPrice(
+                benchmark=Benchmark(row.benchmark),
+                date=lake_rows.to_date(row.date),
+                close=lake_rows.to_decimal(row.close),
+            )
+            for row in df.itertuples(index=False)
+        ]
 
     # ── Delete operations ──
 
     def delete_all(self) -> int:
-        with self._conn.cursor() as cur:
-            cur.execute("DELETE FROM benchmark_daily_prices")
-            return cur.rowcount
+        return lake_rows.delete_where(TABLE)
 
     def delete_by_benchmark(self, benchmark: Benchmark) -> int:
-        with self._conn.cursor() as cur:
-            cur.execute(
-                "DELETE FROM benchmark_daily_prices WHERE benchmark = %s",
-                (benchmark.value,),
-            )
-            return cur.rowcount
+        return lake_rows.delete_where(TABLE, f"benchmark = '{benchmark.value}'")
 
     def delete_before(self, cutoff: date) -> int:
-        with self._conn.cursor() as cur:
-            cur.execute("DELETE FROM benchmark_daily_prices WHERE date < %s", (cutoff,))
-            return cur.rowcount
+        return lake_rows.delete_where(TABLE, f"date < DATE '{cutoff.isoformat()}'")

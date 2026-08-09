@@ -35,19 +35,16 @@ class KrFinancialStatementCollector:
 
     def sync_corp_codes(self) -> int:
         mapping = self._dart.fetch_corp_codes()
-        updated = 0
+        repo = StockRepository()
+        updates = []
 
-        with get_connection() as conn:
-            repo = StockRepository(conn)
-            for market in TARGET_MARKETS:
-                stocks = repo.get_active_stocks(market)
-                for stock_id, symbol, _ in stocks:
-                    corp_code = mapping.get(symbol)
-                    if corp_code:
-                        self._update_corp_code(conn, stock_id, corp_code)
-                        updated += 1
-            conn.commit()
+        for market in TARGET_MARKETS:
+            for _, symbol, _ in repo.get_active_stocks(market):
+                corp_code = mapping.get(symbol)
+                if corp_code:
+                    updates.append((symbol, market.value, corp_code))
 
+        updated = repo.update_dart_corp_codes(updates)
         logger.info(f"[KrFS] Synced {updated} corp_codes")
         return updated
 
@@ -212,20 +209,4 @@ class KrFinancialStatementCollector:
         return count
 
     def _load_stocks_with_corp_code(self) -> list[tuple[int, str, str]]:
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT id, symbol, dart_corp_code FROM stocks
-                    WHERE is_active = true
-                      AND market IN ('KR_KOSPI', 'KR_KOSDAQ')
-                      AND dart_corp_code IS NOT NULL
-                """)
-                return [(row[0], row[1], row[2]) for row in cur.fetchall()]
-
-    @staticmethod
-    def _update_corp_code(conn, stock_id: int, corp_code: str) -> None:
-        with conn.cursor() as cur:
-            cur.execute(
-                "UPDATE stocks SET dart_corp_code = %s WHERE id = %s",
-                (corp_code, stock_id),
-            )
+        return StockRepository().get_stocks_with_corp_code(TARGET_MARKETS)
