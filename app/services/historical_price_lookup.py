@@ -4,7 +4,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from app.db import get_connection, DailyPriceRepository, StockRepository
-from app.db.repositories.exchange_rate import ExchangeRateRepository, ExchangeRateRow
+from app.db.repositories.exchange_rate import ExchangeRateRepository
 from app.collectors.clients import AlpacaClient, PykrxClient, YfinanceClient, EcosClient
 from app.schema import Market
 
@@ -84,11 +84,7 @@ class HistoricalPriceLookup:
         if best is None:
             return None
 
-        with get_connection() as conn:
-            fx_repo = ExchangeRateRepository(conn)
-            fx_repo.upsert_one(ExchangeRateRow(pair="USDKRW", date=best[0], rate=best[1]))
-            conn.commit()
-
+        # 서빙 경로는 읽기 전용 — 조회한 환율은 응답으로만 돌려주고 레이크에 쓰지 않는다.
         return float(best[1])
 
     def _try_db_ohlc(self, stock_id: int, target_date: date) -> dict | None:
