@@ -13,6 +13,7 @@ from app.db.repositories.daily_price import DailyPriceRepository
 from app.db.repositories.exchange_rate import ExchangeRateRepository, ExchangeRateRow
 from app.db.repositories.risk_free_rate import RiskFreeRateRepository
 from app.schema import Benchmark, BenchmarkPrice, Country, Market, Maturity, RiskFreeRate
+from tests.lake_guard import skip_destructive
 
 pytestmark = pytest.mark.integration
 
@@ -165,6 +166,7 @@ def test_risk_free_rate_roundtrip(rate_cleanup):
     assert repo.get_latest_rate(Country.KR, Maturity.D91) is not None
 
 
+@skip_destructive
 def test_exchange_rate_roundtrip_batch_and_single(fx_cleanup):
     repo = ExchangeRateRepository()
     rows = [

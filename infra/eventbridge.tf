@@ -1,4 +1,4 @@
-# 12개 규칙 모두 DISABLED로 생성 — 콜드 ETL 완주 후 ENABLED 전환(Task 16이 전환)
+# 10개 규칙 모두 ENABLED — 콜드 ETL 완주로 DISABLED 가드 해제
 # fs 크론은 분기 보고서 마감 다음 날 KST 03:00을 전일 UTC 18:00으로 환산한 값이다
 locals {
   fs_crons = {
@@ -24,7 +24,7 @@ resource "aws_cloudwatch_event_rule" "pipeline" {
   name                = "${local.app_name}-${each.key}"
   description         = "Runs the ${each.value.command} pipeline via Step Functions."
   schedule_expression = each.value.cron
-  state               = "DISABLED"
+  state               = "ENABLED"
 }
 
 resource "aws_cloudwatch_event_target" "pipeline" {
