@@ -209,8 +209,10 @@ def written(monkeypatch):
     return calls
 
 
-def _meta(steps, command="kr"):
-    return PipelineMetadata(command=command, steps=steps, total_duration_ms=1234)
+def _meta(steps, command="kr", aborted=False):
+    return PipelineMetadata(
+        command=command, steps=steps, total_duration_ms=1234, aborted=aborted
+    )
 
 
 def test_log_pipeline_all_steps_ok_is_status_ok(written):
@@ -239,7 +241,7 @@ def test_log_pipeline_partial_when_run_continued_past_failure(written):
 def test_log_pipeline_error_when_run_aborted_on_failed_step(written):
     audit_log_service.log_pipeline(_meta([
         StepResult("collection", False, 10, "collection boom"),
-    ]))
+    ], aborted=True))
 
     assert written[0]["status"] == "error"
     assert "collection boom" in written[0]["cause"]
@@ -250,7 +252,7 @@ def test_log_pipeline_error_when_fundamentals_failure_skips_factors(written):
         StepResult("collection", True, 10),
         StepResult("fundamentals", False, 5, "fund boom"),
         StepResult("factors", False, 0, "skipped"),
-    ]))
+    ], aborted=True))
 
     assert written[0]["status"] == "error"
     assert "fund boom" in written[0]["cause"]

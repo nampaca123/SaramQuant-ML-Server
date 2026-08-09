@@ -1,6 +1,3 @@
-from flask import jsonify
-
-
 class APIError(Exception):
     def __init__(self, message: str, status_code: int = 400):
         self.message = message
@@ -18,6 +15,9 @@ class InsufficientDataError(APIError):
 
 
 def register_error_handlers(app):
+    # 배치 이미지에는 flask가 없으므로 API 경로에서 호출될 때만 import한다.
+    from flask import jsonify
+
     @app.errorhandler(APIError)
     def handle_api_error(error):
         return jsonify({"error": error.message}), error.status_code

@@ -4,33 +4,20 @@ from typing import Optional
 
 @dataclass
 class StepResult:
+    """input_count/output_count는 런 레코드 counts에 실리는 실제 입력·출력 행 수다."""
     name: str
     success: bool
     duration_ms: int
     error: Optional[str] = None
+    input_count: Optional[int] = None
+    output_count: Optional[int] = None
 
 
 @dataclass
 class PipelineMetadata:
+    """aborted는 오케스트레이터가 중간에 파이프라인을 끊었는지를 뜻한다(error/partial 구분 기준)."""
     command: str
     steps: list[StepResult] = field(default_factory=list)
     total_duration_ms: int = 0
-    stocks_processed: int = 0
-    coverage: dict = field(default_factory=dict)
-
-    def to_dict(self) -> dict:
-        return {
-            "command": self.command,
-            "steps": [
-                {
-                    "name": s.name,
-                    "status": "success" if s.success else "failed",
-                    "duration_ms": s.duration_ms,
-                    **({"error": s.error} if s.error else {}),
-                }
-                for s in self.steps
-            ],
-            "total_duration_ms": self.total_duration_ms,
-            "stocks_processed": self.stocks_processed,
-            "coverage": self.coverage,
-        }
+    aborted: bool = False
+    run_id: Optional[str] = None

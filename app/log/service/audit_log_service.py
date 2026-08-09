@@ -15,14 +15,20 @@ def _resolve_run_id() -> str:
     return os.environ.get("RUN_ID") or uuid4().hex[:12]
 
 
-def _derive_status(steps: list[StepResult]) -> str:
-    # 오케스트레이터는 치명적 실패 시 즉시 중단하므로, 마지막 단계 실패는 중단(error)을 뜻한다.
-    failed = [s for s in steps if not s.success]
-    if not failed:
-        return "ok"
-    if not steps[-1].success:
+def _derive_status(meta: PipelineMetadata) -> str:
+    # 오케스트레이터가 런을 끊었으면 error, 끝까지 갔는데 실패 단계가 있으면 partial이다.
+    if meta.aborted:
         return "error"
-    return "partial"
+    return "ok" if all(step.success for step in meta.steps) else "partial"
+
+
+def _step_counts(step: StepResult) -> dict:
+    counts = {"ok": 1 if step.success else 0, "failed": 0 if step.success else 1}
+    if step.input_count is not None:
+        counts["in"] = step.input_count
+    if step.output_count is not None:
+        counts["out"] = step.output_count
+    return counts
 
 
 def _derive_cause(steps: list[StepResult]) -> str | None:
@@ -50,12 +56,9 @@ def log_pipeline(meta: PipelineMetadata) -> None:
     write_run_record(
         service="calc",
         command=meta.command,
-        status=_derive_status(meta.steps),
+        status=_derive_status(meta),
         started_at=started_at,
-        counts={
-            s.name: {"ok": 1 if s.success else 0, "failed": 0 if s.success else 1}
-            for s in meta.steps
-        },
+        counts={step.name: _step_counts(step) for step in meta.steps},
         cause=_derive_cause(meta.steps),
-        run_id=_resolve_run_id(),
+        run_id=meta.run_id or _resolve_run_id(),
     )

@@ -115,10 +115,7 @@ class IndicatorComputeEngine:
         return rows, stock_market_map
 
     def persist(self, rows: list[tuple], markets: list[Market]) -> int:
-        deleted = self._indicator_repo.delete_by_markets(markets)
-        logger.info(f"[Compute] Deleted {deleted} old indicator rows")
-
-        inserted = self._indicator_repo.insert_batch(rows)
-        self._conn.commit()
-        logger.info(f"[Compute] Inserted {inserted} indicator rows")
+        # insert_batch가 시장 범위를 스스로 비우고 채우므로 별도 delete는 하지 않는다.
+        inserted = self._indicator_repo.insert_batch(rows, markets=markets)
+        logger.info(f"[Compute] Replaced {inserted} indicator rows")
         return inserted

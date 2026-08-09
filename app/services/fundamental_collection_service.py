@@ -1,15 +1,17 @@
 import logging
-import os
-import time
-
-import requests
+from datetime import datetime, timedelta, timezone
 
 from app.collectors.service.kr_financial_statement import KrFinancialStatementCollector
+from app.log.run_record import read_run_summary
 
 logger = logging.getLogger(__name__)
 
-POLL_INTERVAL = 30
-POLL_TIMEOUT = 1800
+USA_SUMMARY_KEY = "run-summary/usa_fstatements.json"
+MAX_SUMMARY_AGE = timedelta(hours=72)
+
+
+class FreshnessGateError(RuntimeError):
+    """US 재무는 별도 서비스가 적재하므로, 신선하지 않으면 이 단계만 건너뛴다."""
 
 
 class FundamentalCollectionService:
@@ -27,41 +29,38 @@ class FundamentalCollectionService:
         return results
 
     def _collect_us(self) -> dict[str, int]:
-        base_url = os.getenv("USA_FS_COLLECTOR_URL")
-        api_key = os.getenv("USA_FS_COLLECTOR_AUTH_KEY")
-        if not base_url or not api_key:
-            raise RuntimeError("USA_FS_COLLECTOR_URL and USA_FS_COLLECTOR_AUTH_KEY must be set")
+        summary = read_run_summary(USA_SUMMARY_KEY)
+        if not summary:
+            self._reject("no run summary found")
+        if summary.get("status") != "ok":
+            self._reject(f"last run status is '{summary.get('status')}'")
 
-        headers = {"x-api-key": api_key}
-        url = f"{base_url.rstrip('/')}/usa-financial-statements"
+        age = self._age(summary.get("written_at_utc"))
+        if age is None:
+            self._reject(f"unreadable written_at_utc '{summary.get('written_at_utc')}'")
+        if age > MAX_SUMMARY_AGE:
+            self._reject(f"last run is {age.total_seconds() / 3600:.1f}h old")
 
-        resp = requests.post(f"{url}/collect", headers=headers, timeout=30)
-        resp.raise_for_status()
-        job_id = resp.json()["jobId"]
-        logger.info(f"[FundCollection] US remote job started: {job_id}")
+        logger.info(
+            "[FundCollection] US freshness gate passed: run_id=%s age=%.1fh",
+            summary.get("run_id"), age.total_seconds() / 3600,
+        )
+        return {}
 
-        deadline = time.time() + POLL_TIMEOUT
-        while time.time() < deadline:
-            time.sleep(POLL_INTERVAL)
-            status_resp = requests.get(f"{url}/status/{job_id}", headers=headers, timeout=30)
-            status_resp.raise_for_status()
-            data = status_resp.json()
-            status = data.get("status")
+    @staticmethod
+    def _age(written_at: str | None) -> timedelta | None:
+        if not written_at:
+            return None
+        try:
+            moment = datetime.fromisoformat(written_at)
+        except (TypeError, ValueError):
+            return None
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) - moment
 
-            if status == "completed":
-                result = data.get("result", {})
-                logger.info(f"[FundCollection] US (remote) complete: {result}")
-                return result
-            elif status == "failed":
-                raise RuntimeError(f"Remote job failed: {data.get('error', 'unknown')}")
-
-            progress = data.get("progress", {})
-            phase = progress.get("phase", "processing")
-            parsed = progress.get("parsed")
-            total = progress.get("total")
-            if parsed and total:
-                logger.info(f"[FundCollection] US remote: {phase} ({parsed}/{total})")
-            else:
-                logger.info(f"[FundCollection] US remote: {phase}")
-
-        raise TimeoutError(f"Remote job {job_id} timed out after {POLL_TIMEOUT}s")
+    @staticmethod
+    def _reject(reason: str) -> None:
+        message = f"US financial statements are not fresh ({USA_SUMMARY_KEY}): {reason}"
+        logger.warning(f"[FundCollection] {message}")
+        raise FreshnessGateError(message)
