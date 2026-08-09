@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# 공유 S3 state 락을 건드리는 terraform 명령은 CI(GITHUB_ACTIONS)에서만 허용 — 로컬 stale 락 방지
+set -euo pipefail
+
+BLOCKED="plan apply destroy refresh import state force-unlock taint untaint"
+# 글로벌 플래그(-chdir 등)를 건너뛰고 첫 비플래그 토큰을 실제 서브커맨드로 사용
+cmd=""
+for a in "$@"; do
+  case "$a" in
+    -*) continue ;;
+    *) cmd="$a"; break ;;
+  esac
+done
+
+if [[ -z "${GITHUB_ACTIONS:-}" ]]; then
+  for b in $BLOCKED; do
+    if [[ "$cmd" == "$b" ]]; then
+      echo "ERROR: 'terraform $cmd' is CI-only — it touches the shared S3 state lock." >&2
+      echo "       Local: run 'make check' (validate only). plan/apply run in deploy.yml via OIDC." >&2
+      exit 1
+    fi
+  done
+fi
+
+exec terraform "$@"
