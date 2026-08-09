@@ -11,11 +11,13 @@ from app.db.repositories.daily_price import DailyPriceRepository
 from app.db.repositories.factor import FactorRepository
 from app.db.repositories.financial_statement import FinancialStatementRepository
 from app.db.repositories.indicator import IndicatorRepository
+from app.db.repositories.risk_badge import RiskBadgeRepository
 from app.schema import FinancialStatement, Market, ReportType
 
 pytestmark = pytest.mark.integration
 
-STOCK_A, STOCK_B = 999901, 999902
+STOCK_A, STOCK_B, STOCK_C = 999901, 999902, 999903
+KR_MARKETS = [Market.KR_KOSPI, Market.KR_KOSDAQ]
 FISCAL_YEAR = 1990
 DAY = date(1990, 1, 2)
 MATRIX = [[1.25, 0.5], [0.5, 2.75]]
@@ -30,7 +32,8 @@ def _seed_stocks() -> None:
     rows = pd.DataFrame(
         [
             {"id": STOCK_A, "symbol": "_T11A", "name": "task11 a", "market": "KR_KOSPI"},
-            {"id": STOCK_B, "symbol": "_T11B", "name": "task11 b", "market": "KR_KOSPI"},
+            {"id": STOCK_B, "symbol": "_T11B", "name": "task11 b", "market": "KR_KOSDAQ"},
+            {"id": STOCK_C, "symbol": "_T11C", "name": "task11 c", "market": "US_NYSE"},
         ]
     )
     rows["is_active"] = True
@@ -46,10 +49,23 @@ def _seed_prices() -> None:
     DailyPriceRepository().bulk_upsert(
         [
             (stock_id, DAY, close, close, close, close, 1000)
-            for stock_id in (STOCK_A, STOCK_B)
+            for stock_id in (STOCK_A, STOCK_B, STOCK_C)
         ],
         run_id=_run_id(),
     )
+
+
+def _badge(stock_id: int, market: str) -> dict:
+    return {
+        "stock_id": stock_id, "market": market, "date": DAY.isoformat(),
+        "summary_tier": "STABLE", "dimensions": {"dims": [{"name": "trend", "score": 10}]},
+    }
+
+
+def _stock_ids(table: str) -> list[int]:
+    lake_reader.invalidate_metadata_cache(table)
+    sql = f"SELECT stock_id FROM {lake_reader.scan(table)} ORDER BY stock_id"
+    return [int(value) for value in lake_reader.query_df(sql)["stock_id"]]
 
 
 def _statement(report_type: ReportType, revenue: str) -> FinancialStatement:
@@ -95,6 +111,12 @@ def indicator_cleanup():
     _cleanup("stock_indicators", "daily_prices", "stocks")
 
 
+@pytest.fixture
+def badge_cleanup():
+    yield
+    _cleanup("risk_badges", "stocks")
+
+
 def test_financial_statement_merge_reads_back_in_ttm_order(statement_cleanup):
     _seed_stocks()
     repo = FinancialStatementRepository()
@@ -126,15 +148,17 @@ def test_factor_covariance_roundtrips_the_matrix_through_json(covariance_cleanup
     assert repo.get_latest_covariance(Market.US_NYSE) is None
 
 
-def test_stock_indicator_snapshot_replace_keeps_only_the_last_write(indicator_cleanup):
+def test_stock_indicator_snapshot_replace_is_scoped_to_the_written_markets(indicator_cleanup):
     _seed_stocks()
     _seed_prices()
     repo = IndicatorRepository()
 
-    assert repo.insert_batch(
-        [_indicator_row(STOCK_A), _indicator_row(STOCK_B)], run_id=_run_id()
-    ) == 2
-    assert _count("stock_indicators") == 2
+    written = repo.insert_batch(
+        [_indicator_row(STOCK_A), _indicator_row(STOCK_B), _indicator_row(STOCK_C)],
+        run_id=_run_id(),
+    )
+    assert written == 3
+    assert _stock_ids("stock_indicators") == [STOCK_A, STOCK_B, STOCK_C]
 
     latest = repo.get_latest_by_stock(STOCK_A)
     assert latest["rsi_14"] == Decimal("1.5000")
@@ -142,7 +166,51 @@ def test_stock_indicator_snapshot_replace_keeps_only_the_last_write(indicator_cl
     assert latest["date"] == DAY
     assert latest["close"] == Decimal("10000.00")
 
+    # KR 리전만 재작성 — US 행은 살아남아야 한다(Athena IN-subquery DELETE 실증).
+    assert repo.insert_batch(
+        [_indicator_row(STOCK_A)], run_id=_run_id(), markets=KR_MARKETS
+    ) == 1
+    assert _stock_ids("stock_indicators") == [STOCK_A, STOCK_C]
+    assert list(repo.get_all_by_market(Market.KR_KOSPI)) == [STOCK_A]
+    assert list(repo.get_all_by_market(Market.US_NYSE)) == [STOCK_C]
+
+    assert repo.delete_by_markets(KR_MARKETS) == 1
+    assert _stock_ids("stock_indicators") == [STOCK_C]
+
+
+def test_indicator_insert_batch_derives_its_market_scope_from_the_rows(indicator_cleanup):
+    _seed_stocks()
+    _seed_prices()
+    repo = IndicatorRepository()
+
+    repo.insert_batch(
+        [_indicator_row(STOCK_A), _indicator_row(STOCK_B), _indicator_row(STOCK_C)],
+        run_id=_run_id(),
+    )
+
+    assert repo.insert_batch([_indicator_row(STOCK_C)], run_id=_run_id()) == 1
+    assert _stock_ids("stock_indicators") == [STOCK_A, STOCK_B, STOCK_C]
+
     assert repo.insert_batch([_indicator_row(STOCK_B)], run_id=_run_id()) == 1
-    assert _count("stock_indicators") == 1
-    assert repo.get_latest_by_stock(STOCK_A) is None
-    assert list(repo.get_all_by_market(Market.KR_KOSPI)) == [STOCK_B]
+    assert _stock_ids("stock_indicators") == [STOCK_A, STOCK_B, STOCK_C]
+
+
+def test_risk_badge_snapshot_replace_is_scoped_per_market(badge_cleanup):
+    _seed_stocks()
+    repo = RiskBadgeRepository()
+
+    # orchestrator의 market별 루프를 그대로 재현한다.
+    assert repo.upsert_batch([_badge(STOCK_A, "KR_KOSPI")], run_id=_run_id()) == 1
+    assert repo.upsert_batch([_badge(STOCK_B, "KR_KOSDAQ")], run_id=_run_id()) == 1
+    assert repo.upsert_batch([_badge(STOCK_C, "US_NYSE")], run_id=_run_id()) == 1
+
+    assert _stock_ids("risk_badges") == [STOCK_A, STOCK_B, STOCK_C]
+    assert repo.get_by_stock(STOCK_A)["dimensions"] == _badge(STOCK_A, "KR_KOSPI")["dimensions"]
+    assert repo.get_by_stock(STOCK_A)["summary_tier"] == "STABLE"
+    assert set(repo.get_by_stocks([STOCK_A, STOCK_C])) == {STOCK_A, STOCK_C}
+
+    replaced = {**_badge(STOCK_A, "KR_KOSPI"), "summary_tier": "WARNING"}
+    assert repo.upsert_batch([replaced], run_id=_run_id()) == 1
+    assert _stock_ids("risk_badges") == [STOCK_A, STOCK_B, STOCK_C]
+    assert repo.get_by_stock(STOCK_A)["summary_tier"] == "WARNING"
+    assert repo.get_by_stock(STOCK_B)["summary_tier"] == "STABLE"

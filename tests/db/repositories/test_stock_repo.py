@@ -320,6 +320,42 @@ def test_update_sectors_only_touches_known_keys(lake):
     assert df["updated_at"].iloc[0] != CREATED
 
 
+def test_update_dart_corp_codes_writes_only_the_corp_code_column(lake):
+    lake["rows"] = _stocks_df(
+        _stock_row(id=1, symbol="AAA", market="KR_KOSPI"),
+        _stock_row(id=2, symbol="BBB", market="KR_KOSDAQ"),
+    )
+    repo = stock.StockRepository()
+
+    count = repo.update_dart_corp_codes([("AAA", "KR_KOSPI", "00126380")])
+
+    _, df, _ = lake["merged"][0]
+    assert count == 1
+    assert list(df["symbol"]) == ["AAA"]
+    assert list(df["dart_corp_code"]) == ["00126380"]
+    assert list(df["sector"]) == ["IT"]
+
+
+def test_update_dart_corp_codes_is_noop_for_empty_input(lake):
+    assert stock.StockRepository().update_dart_corp_codes([]) == 0
+    assert lake["merged"] == []
+
+
+def test_get_stocks_with_corp_code_filters_active_rows_with_a_code(lake):
+    lake["rows"] = _stocks_df(
+        _stock_row(id=1, symbol="AAA", dart_corp_code="00126380"),
+    )
+
+    rows = stock.StockRepository().get_stocks_with_corp_code(
+        [Market.KR_KOSPI, Market.KR_KOSDAQ]
+    )
+
+    sql, params = lake["queries"][-1]
+    assert rows == [(1, "AAA", "00126380")]
+    assert "s.is_active AND s.dart_corp_code IS NOT NULL" in sql
+    assert params == ["KR_KOSPI", "KR_KOSDAQ"]
+
+
 def test_deactivate_unlisted_flags_only_missing_symbols(lake):
     lake["rows"] = _stocks_df(
         _stock_row(id=1, symbol="AAA"),

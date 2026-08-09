@@ -187,8 +187,8 @@ def test_snapshot_replace_with_empty_dataframe_makes_no_aws_calls(aws):
     assert aws["s3"].puts == []
 
 
-def test_snapshot_replace_deletes_then_inserts_explicit_columns(aws):
-    df = pd.DataFrame(
+def _badge_df():
+    return pd.DataFrame(
         [
             {
                 "stock_id": 1,
@@ -201,7 +201,9 @@ def test_snapshot_replace_deletes_then_inserts_explicit_columns(aws):
         ]
     )
 
-    written = lake_writer.snapshot_replace("risk_badges", df, "run-1")
+
+def test_snapshot_replace_deletes_then_inserts_explicit_columns(aws):
+    written = lake_writer.snapshot_replace("risk_badges", _badge_df(), "run-1")
 
     columns = ", ".join(name for name, _ in TABLES["risk_badges"].columns)
     assert written == 1
@@ -211,6 +213,24 @@ def test_snapshot_replace_deletes_then_inserts_explicit_columns(aws):
         f" SELECT {columns} FROM saramquant.stg_risk_badges"
     )
     assert aws["invalidated"] == ["risk_badges"]
+
+
+def test_snapshot_replace_scopes_the_delete_when_given_a_predicate(aws):
+    lake_writer.snapshot_replace(
+        "risk_badges", _badge_df(), "run-1",
+        delete_where="market IN ('KR_KOSPI', 'KR_KOSDAQ')",
+    )
+
+    assert aws["executed"][2] == (
+        "DELETE FROM saramquant.risk_badges WHERE market IN ('KR_KOSPI', 'KR_KOSDAQ')"
+    )
+    assert aws["executed"][3].startswith("INSERT INTO saramquant.risk_badges")
+
+
+def test_snapshot_replace_keeps_full_delete_when_predicate_is_none(aws):
+    lake_writer.snapshot_replace("risk_badges", _badge_df(), "run-1", delete_where=None)
+
+    assert aws["executed"][2] == "DELETE FROM saramquant.risk_badges"
 
 
 def test_optimize_and_vacuum_runs_both_statements_per_table(aws):

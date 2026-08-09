@@ -23,6 +23,7 @@ def lake(monkeypatch):
         "stocks": pd.DataFrame(
             [{"id": 1, "market": "KR_KOSPI"}, {"id": 2, "market": "US_NYSE"}]
         ),
+        "stock_markets": pd.DataFrame([{"market": "KR_KOSPI"}]),
         "rows": pd.DataFrame(),
         "queries": [],
         "merged": [],
@@ -34,14 +35,16 @@ def lake(monkeypatch):
         state["queries"].append((sql, params))
         if "SELECT id, market" in sql:
             return state["stocks"].copy()
+        if "DISTINCT market" in sql:
+            return state["stock_markets"].copy()
         return state["rows"].copy()
 
     def fake_merge(table, df, run_id):
         state["merged"].append((table, df.copy(), run_id))
         return len(df)
 
-    def fake_snapshot_replace(table, df, run_id):
-        state["snapshots"].append((table, df.copy(), run_id))
+    def fake_snapshot_replace(table, df, run_id, delete_where=None):
+        state["snapshots"].append((table, df.copy(), run_id, delete_where))
         return len(df)
 
     monkeypatch.setattr(lake_reader, "scan", lambda table: f"scan_{table}")
@@ -205,16 +208,42 @@ def test_fundamental_get_all_by_market_keys_by_stock_id(lake):
 # ── stock_indicators (snapshot) ──
 
 
-def test_indicator_insert_batch_replaces_the_whole_snapshot(lake):
-    rows = [tuple([1, D1] + [1.0] * 16 + [10, 20] + [1.0] * 4)]
+def _indicator_rows(*stock_ids: int) -> list[tuple]:
+    return [tuple([sid, D1] + [1.0] * 16 + [10, 20] + [1.0] * 4) for sid in stock_ids]
 
-    count = indicator.IndicatorRepository().insert_batch(rows, run_id="run-ind")
 
-    table, df, run_id = lake["snapshots"][0]
+def test_indicator_insert_batch_scopes_the_replace_to_the_rows_markets(lake):
+    count = indicator.IndicatorRepository().insert_batch(
+        _indicator_rows(1), run_id="run-ind"
+    )
+
+    table, df, run_id, delete_where = lake["snapshots"][0]
     assert count == 1
     assert (table, run_id) == ("stock_indicators", "run-ind")
     assert list(df.columns) == lake_rows.columns_of("stock_indicators")
+    assert delete_where == (
+        "stock_id IN (SELECT id FROM saramquant.stocks WHERE market IN ('KR_KOSPI'))"
+    )
     assert lake["merged"] == []
+
+
+def test_indicator_insert_batch_uses_explicit_markets_when_given(lake):
+    indicator.IndicatorRepository().insert_batch(
+        _indicator_rows(1), markets=[Market.US_NYSE, Market.US_NASDAQ]
+    )
+
+    assert lake["snapshots"][0][3] == (
+        "stock_id IN (SELECT id FROM saramquant.stocks"
+        " WHERE market IN ('US_NYSE', 'US_NASDAQ'))"
+    )
+
+
+def test_indicator_insert_batch_never_widens_scope_when_market_is_unknown(lake):
+    lake["stock_markets"] = pd.DataFrame(columns=["market"])
+
+    indicator.IndicatorRepository().insert_batch(_indicator_rows(7, 3))
+
+    assert lake["snapshots"][0][3] == "stock_id IN (3, 7)"
 
 
 def test_indicator_insert_batch_is_noop_for_empty_input(lake):
@@ -222,7 +251,26 @@ def test_indicator_insert_batch_is_noop_for_empty_input(lake):
     assert lake["snapshots"] == []
 
 
-def test_indicator_delete_by_markets_is_superseded_by_the_snapshot_write(lake):
+def test_indicator_delete_by_markets_issues_a_market_scoped_athena_delete(lake):
+    lake["rows"] = pd.DataFrame([{"n": 12}])
+
+    deleted = indicator.IndicatorRepository().delete_by_markets(
+        [Market.KR_KOSPI, Market.KR_KOSDAQ]
+    )
+
+    assert deleted == 12
+    assert lake["athena"] == [
+        "DELETE FROM saramquant.stock_indicators WHERE stock_id IN"
+        " (SELECT id FROM saramquant.stocks WHERE market IN ('KR_KOSPI', 'KR_KOSDAQ'))"
+    ]
+    count_sql, _ = lake["queries"][0]
+    assert "scan_stocks" in count_sql
+    assert "saramquant.stocks" not in count_sql
+
+
+def test_indicator_delete_by_markets_skips_athena_when_nothing_matches(lake):
+    lake["rows"] = pd.DataFrame([{"n": 0}])
+
     assert indicator.IndicatorRepository().delete_by_markets([Market.KR_KOSPI]) == 0
     assert lake["athena"] == []
 
@@ -442,12 +490,27 @@ def _badge(stock_id: int) -> dict:
 def test_risk_badge_upsert_batch_replaces_snapshot_with_json_dimensions(lake):
     count = risk_badge.RiskBadgeRepository().upsert_batch([_badge(1)], run_id="run-badge")
 
-    table, df, run_id = lake["snapshots"][0]
+    table, df, run_id, delete_where = lake["snapshots"][0]
     assert count == 1
     assert (table, run_id) == ("risk_badges", "run-badge")
     assert list(df.columns) == lake_rows.columns_of("risk_badges")
     assert json.loads(df.iloc[0]["dimensions"]) == _badge(1)["dimensions"]
     assert df["updated_at"].notna().all()
+    assert delete_where == "market IN ('KR_KOSPI')"
+
+
+def test_risk_badge_upsert_batch_scopes_delete_to_the_markets_present_in_rows(lake):
+    kosdaq = {**_badge(2), "market": "KR_KOSDAQ"}
+
+    risk_badge.RiskBadgeRepository().upsert_batch([_badge(1), kosdaq])
+
+    assert lake["snapshots"][0][3] == "market IN ('KR_KOSDAQ', 'KR_KOSPI')"
+
+
+def test_risk_badge_upsert_batch_of_one_market_leaves_other_markets_alone(lake):
+    risk_badge.RiskBadgeRepository().upsert_batch([{**_badge(3), "market": "US_NYSE"}])
+
+    assert lake["snapshots"][0][3] == "market IN ('US_NYSE')"
 
 
 def test_risk_badge_upsert_batch_is_noop_for_empty_input(lake):
@@ -511,3 +574,13 @@ def test_run_id_falls_back_to_environment(lake, monkeypatch):
     risk_badge.RiskBadgeRepository().upsert_batch([_badge(1)])
 
     assert lake["snapshots"][0][2] == "env-run"
+
+
+def test_markets_of_resolves_the_distinct_markets_behind_the_rows(lake):
+    lake["stock_markets"] = pd.DataFrame([{"market": "KR_KOSDAQ"}, {"market": "KR_KOSPI"}])
+
+    assert indicator.markets_of([2, 1, 1]) == ["KR_KOSDAQ", "KR_KOSPI"]
+
+
+def test_markets_of_is_noop_without_ids(lake):
+    assert indicator.markets_of([]) == []

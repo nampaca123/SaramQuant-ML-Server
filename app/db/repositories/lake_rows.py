@@ -95,11 +95,31 @@ def limit_clause(limit: int | None) -> str:
     return f" LIMIT {int(limit)}" if limit else ""
 
 
-def delete_where(table: str, predicate: str = "") -> int:
-    """predicate는 DuckDB 카운트와 Athena DELETE에 그대로 쓰이므로 리터럴 SQL이어야 한다."""
+def market_literals(markets) -> str:
+    return ", ".join(f"'{str(getattr(market, 'value', market))}'" for market in markets)
+
+
+def stock_market_predicate(markets) -> str:
+    return (
+        f"stock_id IN (SELECT id FROM {_glue_database()}.stocks"
+        f" WHERE market IN ({market_literals(markets)}))"
+    )
+
+
+def stock_market_scan_predicate(markets) -> str:
+    return (
+        f"stock_id IN (SELECT id FROM {lake_reader.scan('stocks')}"
+        f" WHERE market IN ({market_literals(markets)}))"
+    )
+
+
+def delete_where(table: str, predicate: str = "", count_predicate: str | None = None) -> int:
+    """predicate는 Athena DELETE에, count_predicate(없으면 predicate)는 DuckDB 카운트에 쓰인다."""
     clause = f" WHERE {predicate}" if predicate else ""
+    counted = count_predicate if count_predicate is not None else predicate
+    count_clause = f" WHERE {counted}" if counted else ""
     deleted = int(lake_reader.query_df(
-        f"SELECT count(*) AS n FROM {lake_reader.scan(table)}{clause}"
+        f"SELECT count(*) AS n FROM {lake_reader.scan(table)}{count_clause}"
     ).iloc[0]["n"])
     if deleted:
         run_query(f"DELETE FROM {_glue_database()}.{table}{clause}")

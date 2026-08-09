@@ -155,12 +155,12 @@ class StockRepository:
         )
         return [(int(row.id), row.symbol) for row in df.itertuples(index=False)]
 
-    def update_sectors(
-        self, updates: list[tuple[str, str, str]], run_id: str | None = None
+    def _update_column(
+        self, updates: list[tuple[str, str, str]], column: str, run_id: str | None
     ) -> int:
         if not updates:
             return 0
-        wanted = {(symbol, market): sector for symbol, market, sector in updates}
+        wanted = {(symbol, market): value for symbol, market, value in updates}
         current = _select()
         if current.empty:
             return 0
@@ -172,11 +172,34 @@ class StockRepository:
         matched = current[mask].copy()
         if matched.empty:
             return 0
-        matched["sector"] = [
+        matched[column] = [
             wanted[key] for key in zip(matched["symbol"], matched["market"])
         ]
         matched["updated_at"] = _now()
         return _write(matched, run_id)
+
+    def update_sectors(
+        self, updates: list[tuple[str, str, str]], run_id: str | None = None
+    ) -> int:
+        return self._update_column(updates, "sector", run_id)
+
+    def update_dart_corp_codes(
+        self, updates: list[tuple[str, str, str]], run_id: str | None = None
+    ) -> int:
+        """updates: [(symbol, market, dart_corp_code)]"""
+        return self._update_column(updates, "dart_corp_code", run_id)
+
+    def get_stocks_with_corp_code(self, markets: list[Market]) -> list[tuple[int, str, str]]:
+        """Returns [(id, symbol, dart_corp_code)] for active stocks that have a DART corp code."""
+        values = [market.value for market in markets]
+        df = _select(
+            "s.is_active AND s.dart_corp_code IS NOT NULL"
+            f" AND s.market IN ({', '.join('?' * len(values))})",
+            values,
+        )
+        return [
+            (int(row.id), row.symbol, row.dart_corp_code) for row in df.itertuples(index=False)
+        ]
 
     def _set_active(self, rows: pd.DataFrame, is_active: bool, run_id: str | None) -> int:
         if rows.empty:

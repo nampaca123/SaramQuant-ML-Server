@@ -50,6 +50,8 @@ class RiskBadgeRepository:
             ]
         ).drop_duplicates(subset=["stock_id"], keep="last")
         payload["updated_at"] = lake_rows.now_utc()
+        markets = sorted({str(market) for market in payload["market"]})
         return lake_writer.snapshot_replace(
-            "risk_badges", payload[BADGE_COLUMNS], lake_rows.resolve_run_id(run_id)
+            "risk_badges", payload[BADGE_COLUMNS], lake_rows.resolve_run_id(run_id),
+            delete_where=f"market IN ({lake_rows.market_literals(markets)})",
         )

@@ -93,7 +93,10 @@ def merge(table: str, df: pd.DataFrame, run_id: str) -> int:
     return len(df)
 
 
-def snapshot_replace(table: str, df: pd.DataFrame, run_id: str) -> int:
+def snapshot_replace(
+    table: str, df: pd.DataFrame, run_id: str, delete_where: str | None = None
+) -> int:
+    """delete_where가 주어지면 그 범위만 비우고 채운다(리터럴 SQL). None이면 테이블 전체 교체."""
     if not TABLES[table].snapshot:
         raise ValueError(f"table {table} is not snapshot-managed; use merge")
     if df.empty:
@@ -101,13 +104,17 @@ def snapshot_replace(table: str, df: pd.DataFrame, run_id: str) -> int:
     database = _glue_database()
     columns = ", ".join(_column_names(table))
     write_staging(table, df, run_id)
-    run_query(f"DELETE FROM {database}.{table}")
+    clause = f" WHERE {delete_where}" if delete_where else ""
+    run_query(f"DELETE FROM {database}.{table}{clause}")
     run_query(
         f"INSERT INTO {database}.{table} ({columns})"
         f" SELECT {columns} FROM {database}.stg_{table}"
     )
     lake_reader.invalidate_metadata_cache(table)
-    logger.info("Snapshot replaced: table=%s rows=%d run_id=%s", table, len(df), run_id)
+    logger.info(
+        "Snapshot replaced: table=%s rows=%d run_id=%s scope=%s",
+        table, len(df), run_id, delete_where or "*",
+    )
     return len(df)
 
 
