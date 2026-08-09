@@ -6,7 +6,7 @@ variable "region" {
 
   validation {
     condition     = length(var.region) > 0
-    error_message = "region must be non-empty. Set GitHub variable AWS_REGION_APNE2."
+    error_message = "region must be non-empty. It is fixed as TF_VAR_region in .github/workflows/deploy.yml."
   }
 }
 
