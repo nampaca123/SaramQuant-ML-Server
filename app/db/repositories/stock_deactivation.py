@@ -1,4 +1,5 @@
 """progressive deactivate 계산 — 가격/섹터/재무 존재 여부로 is_active 변경분과 안전 통계를 만든다."""
+import logging
 from datetime import datetime, timezone
 
 import pandas as pd
@@ -6,6 +7,8 @@ import pandas as pd
 from app.db import lake_reader
 from app.db.lake_schemas import TABLES
 from app.schema import Market
+
+logger = logging.getLogger(__name__)
 
 STOCK_COLUMNS = [name for name, _ in TABLES["stocks"].columns]
 CANDIDATE_COLUMNS = STOCK_COLUMNS + ["has_price", "has_fs", "relisted"]
@@ -26,14 +29,23 @@ def resolve_markets(market_group: str) -> list[str]:
     raise ValueError(f"unknown market group: {market_group}")
 
 
-def decide_activation(candidates: pd.DataFrame, now: datetime) -> pd.DataFrame:
+def region_has_financial_statements(candidates: pd.DataFrame) -> bool:
+    if candidates.empty:
+        return False
+    return bool(candidates["has_fs"].astype(bool).any())
+
+
+def decide_activation(
+    candidates: pd.DataFrame, now: datetime, fs_available: bool = True
+) -> pd.DataFrame:
     """활성 유지 조건은 가격·섹터·재무 3종 존재이며, 재상장(relisted) 종목만 비활성에서 복귀한다."""
     if candidates.empty:
         return pd.DataFrame(columns=STOCK_COLUMNS)
 
     active = candidates["is_active"].astype(bool)
     has_sector = candidates["sector"].notna() & (candidates["sector"] != NO_SECTOR)
-    eligible = candidates["has_price"].astype(bool) & has_sector & candidates["has_fs"].astype(bool)
+    has_fs = candidates["has_fs"].astype(bool) if fs_available else True
+    eligible = candidates["has_price"].astype(bool) & has_sector & has_fs
     new_active = (active | candidates["relisted"].astype(bool)) & eligible
 
     changed = new_active != active
@@ -101,5 +113,11 @@ def compute_deactivation(
     market_group: str, active_symbols: dict | None = None
 ) -> tuple[pd.DataFrame, dict[str, int]]:
     candidates = load_candidates(market_group, active_symbols)
-    changes = decide_activation(candidates, datetime.now(timezone.utc))
+    fs_available = region_has_financial_statements(candidates)
+    if not fs_available and not candidates.empty:
+        logger.warning(
+            f"[Deactivate] no financial statements for region {market_group}"
+            " - skipping FS criterion (cold start)"
+        )
+    changes = decide_activation(candidates, datetime.now(timezone.utc), fs_available)
     return changes, summarize_activation(candidates, changes)

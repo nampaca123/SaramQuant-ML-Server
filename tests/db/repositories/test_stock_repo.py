@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 
 import pandas as pd
@@ -242,6 +243,92 @@ def test_decide_activation_handles_empty_candidates():
 
     assert changes.empty
     assert list(changes.columns) == stock.STOCK_COLUMNS
+
+
+# ── 재무 부재 리전 가드 (cold start) ──
+
+
+def test_region_without_any_fs_row_skips_the_fs_criterion():
+    candidates = _candidates_df(
+        _candidate(id=1, symbol="AAPL", market="US_NYSE", has_fs=False),
+        _candidate(id=2, symbol="MSFT", market="US_NASDAQ", has_fs=False),
+    )
+
+    changes = deact.decide_activation(candidates, NOW, fs_available=False)
+
+    assert changes.empty
+
+
+def test_fs_guard_keeps_price_and_sector_criteria():
+    candidates = _candidates_df(
+        _candidate(id=1, symbol="AAPL", market="US_NYSE", has_fs=False),
+        _candidate(id=2, symbol="MSFT", market="US_NYSE", has_fs=False, has_price=False),
+        _candidate(id=3, symbol="TSLA", market="US_NYSE", has_fs=False, sector="N/A"),
+    )
+
+    changes = deact.decide_activation(candidates, NOW, fs_available=False)
+
+    assert sorted(int(i) for i in changes["id"]) == [2, 3]
+    assert not changes["is_active"].astype(bool).any()
+
+
+def test_fs_guard_still_reactivates_relisted_stock():
+    row = _candidate(id=1, market="US_NYSE", is_active=False, relisted=True, has_fs=False)
+
+    changes = deact.decide_activation(_candidates_df(row), NOW, fs_available=False)
+
+    assert bool(changes["is_active"].iloc[0]) is True
+
+
+def test_region_with_fs_keeps_deactivating_stocks_without_fs():
+    candidates = _candidates_df(
+        _candidate(id=1, symbol="AAA"),
+        _candidate(id=2, symbol="BBB", has_fs=False),
+    )
+
+    changes = deact.decide_activation(candidates, NOW, fs_available=True)
+
+    assert list(changes["id"]) == [2]
+
+
+def test_region_fs_presence_is_false_only_when_no_candidate_has_fs():
+    mixed = _candidates_df(
+        _candidate(id=1, symbol="AAA", has_fs=False),
+        _candidate(id=2, symbol="BBB", has_fs=True),
+    )
+
+    assert deact.region_has_financial_statements(mixed) is True
+    assert deact.region_has_financial_statements(_candidates_df(_candidate(has_fs=False))) is False
+    assert deact.region_has_financial_statements(_candidates_df()) is False
+
+
+def test_compute_deactivation_skips_fs_criterion_and_warns_on_cold_start(monkeypatch, caplog):
+    candidates = _candidates_df(
+        _candidate(id=1, symbol="AAPL", market="US_NYSE", has_fs=False),
+        _candidate(id=2, symbol="MSFT", market="US_NASDAQ", has_fs=False, has_price=False),
+    )
+    monkeypatch.setattr(deact, "load_candidates", lambda group, symbols=None: candidates)
+
+    with caplog.at_level(logging.WARNING):
+        changes, stats = deact.compute_deactivation("us")
+
+    assert list(changes["id"]) == [2]
+    assert stats["deactivated"] == 1
+    assert (
+        "[Deactivate] no financial statements for region us"
+        " - skipping FS criterion (cold start)" in caplog.text
+    )
+
+
+def test_compute_deactivation_does_not_warn_when_region_has_fs(monkeypatch, caplog):
+    candidates = _candidates_df(_candidate(id=1, symbol="AAA"), _candidate(id=2, symbol="BBB", has_fs=False))
+    monkeypatch.setattr(deact, "load_candidates", lambda group, symbols=None: candidates)
+
+    with caplog.at_level(logging.WARNING):
+        changes, _ = deact.compute_deactivation("kr")
+
+    assert list(changes["id"]) == [2]
+    assert "skipping FS criterion" not in caplog.text
 
 
 # ── 안전 임계 통계 (pure) ──
