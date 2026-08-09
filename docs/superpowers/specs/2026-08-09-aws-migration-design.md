@@ -47,6 +47,8 @@ Glue 데이터베이스: `saramquant` 단일. 크롤러 없음(Iceberg가 카탈
 
 ### 테이블별 파티션 스펙
 
+**스키마·파티셔닝의 단일 기준 문서는 `docs/spec/lakehouse-schema.md`이다** (전체 컬럼 정의, 타입 매핑, 서비스 간 계약 포함). 아래는 요약.
+
 데이터 규모가 작으므로(전 종목 ~9천 개, 일일 신규 ~1만 행/테이블) **과분할 방지**가 핵심이다.
 파티션 프로젝션은 Hive 외부 테이블 전용 기능으로 Iceberg에는 해당 없음 — Iceberg 메타데이터 프루닝 + 파일 내 정렬로 대체한다.
 
@@ -152,7 +154,7 @@ RunTaskOnDemand 실패 → Fail
   2. ECR 리포지토리만 targeted apply → 이미지 빌드/푸시 (태그 = Dockerfile+소스 해시, 존재 시 스킵)
   3. `terraform plan -out` → `apply`
 - 이미지: `calc-batch`(배치), `calc-api`(Lambda) 2개 리포, ECR 라이프사이클 최근 3개 유지.
-- 태그: 전 리소스 `default_tags`로 project 태그 부여.
+- 태그: 전 리소스 `default_tags`로 `project=saramquant` 부여 (사용자 확정).
 
 ## 6. 로깅 / 운영
 
