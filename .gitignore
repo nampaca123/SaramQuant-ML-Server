@@ -77,3 +77,11 @@ htmlcov/
 # Database
 *.db
 *.sqlite3
+
+# Terraform
+.terraform/
+*.tfstate*
+tfplan
+
+# Claude Code local settings
+.claude/settings.local.json

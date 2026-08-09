@@ -1,0 +1,134 @@
+name: deploy
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: terraform-state-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  AWS_ACCESS_KEY_ID: ${{ secrets.SARAMQUANT_IAM_KEY_ACCESS }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.SARAMQUANT_IAM_KEY_SECRET }}
+  AWS_DEFAULT_REGION: ap-northeast-2
+  AWS_REGION: ap-northeast-2
+  TF_IN_AUTOMATION: "true"
+  TF_VAR_region: ap-northeast-2
+  TF_VAR_alpaca_api_key: ${{ vars.ALPACA_API_KEY }}
+  TF_VAR_alpaca_secret_key: ${{ vars.ALPACA_SECRET_KEY }}
+  TF_VAR_dart_api_key: ${{ vars.DART_API_KEY }}
+  TF_VAR_ecos_api_key: ${{ vars.ECOS_API_KEY }}
+  TF_VAR_fred_api_key: ${{ vars.FRED_API_KEY }}
+  TF_VAR_finnhub_api_key: ${{ vars.FINNHUB_API_KEY }}
+  TF_VAR_krx_id: ${{ vars.KRX_ID }}
+  TF_VAR_krx_password: ${{ vars.KRX_PASSWORD }}
+  TF_VAR_calc_auth_key: ${{ vars.CALC_AUTH_KEY }}
+
+jobs:
+  terraform:
+    name: terraform plan/apply
+    if: github.repository == 'nampaca123/saramquant-calc-server'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify AWS credentials
+        run: aws sts get-caller-identity
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform check (fmt + validate)
+        run: |
+          cd infra
+          terraform init -backend=false -input=false
+          terraform fmt -check -recursive
+          terraform validate
+
+      - name: Compute image tags
+        run: |
+          set -euo pipefail
+          sources=$(find app -type f -name '*.py' | LC_ALL=C sort)
+          batch_hash=$(cat docker/batch/Dockerfile requirements.txt $sources | md5sum | cut -c1-12)
+          echo "BATCH_IMAGE_TAG=$batch_hash" >> "$GITHUB_ENV"
+          echo "TF_VAR_batch_image_tag=$batch_hash" >> "$GITHUB_ENV"
+          if [ -f docker/api/Dockerfile ]; then
+            api_inputs="docker/api/Dockerfile"
+            if [ -f requirements-api.txt ]; then api_inputs="$api_inputs requirements-api.txt"; fi
+            api_hash=$(cat $api_inputs $sources | md5sum | cut -c1-12)
+          else
+            api_hash=bootstrap
+          fi
+          echo "API_IMAGE_TAG=$api_hash" >> "$GITHUB_ENV"
+          echo "TF_VAR_api_image_tag=$api_hash" >> "$GITHUB_ENV"
+          echo "batch=$batch_hash api=$api_hash"
+
+      - name: Terraform init
+        run: cd infra && terraform init -reconfigure -input=false
+
+      - name: Apply ECR repositories
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          cd infra
+          terraform apply -input=false -auto-approve \
+            -target=aws_ecr_repository.batch \
+            -target=aws_ecr_repository.api
+
+      - name: Login to ECR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          account=$(aws sts get-caller-identity --query Account --output text)
+          registry="$account.dkr.ecr.ap-northeast-2.amazonaws.com"
+          echo "ECR_REGISTRY=$registry" >> "$GITHUB_ENV"
+          aws ecr get-login-password --region ap-northeast-2 \
+            | docker login --username AWS --password-stdin "$registry"
+
+      - name: Build and push batch image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          if aws ecr describe-images --repository-name saramquant-calc-batch \
+               --image-ids imageTag="$BATCH_IMAGE_TAG" >/dev/null 2>&1; then
+            echo "batch image tag $BATCH_IMAGE_TAG already exists, skipping build"
+            exit 0
+          fi
+          image="$ECR_REGISTRY/saramquant-calc-batch:$BATCH_IMAGE_TAG"
+          docker build -f docker/batch/Dockerfile -t "$image" .
+          docker push "$image"
+
+      - name: Build and push API image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          if [ ! -f docker/api/Dockerfile ]; then
+            echo "docker/api/Dockerfile not present yet, skipping build"
+            exit 0
+          fi
+          if aws ecr describe-images --repository-name saramquant-calc-api \
+               --image-ids imageTag="$API_IMAGE_TAG" >/dev/null 2>&1; then
+            echo "api image tag $API_IMAGE_TAG already exists, skipping build"
+            exit 0
+          fi
+          image="$ECR_REGISTRY/saramquant-calc-api:$API_IMAGE_TAG"
+          docker build -f docker/api/Dockerfile -t "$image" .
+          docker push "$image"
+
+      - name: Terraform plan
+        run: cd infra && terraform plan -input=false -out=tfplan
+
+      - name: Terraform apply
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: cd infra && terraform apply -input=false tfplan
