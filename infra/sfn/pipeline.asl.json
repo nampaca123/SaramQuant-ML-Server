@@ -27,7 +27,7 @@
       },
       "TimeoutSeconds": 14400,
       "Retry": [{ "ErrorEquals": ["ECS.AmazonECSException"], "MaxAttempts": 2, "IntervalSeconds": 60 }],
-      "Catch": [{ "ErrorEquals": ["States.ALL"], "Next": "RunTaskOnDemand" }],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "RunTaskOnDemand" }],
       "End": true
     },
     "RunTaskOnDemand": {

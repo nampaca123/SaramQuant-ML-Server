@@ -1,5 +1,6 @@
 """DuckDB 레이크하우스 리더 — Glue metadata_location을 통한 Iceberg 읽기 전용 경로."""
 import os
+import threading
 import time
 
 import duckdb
@@ -11,6 +12,7 @@ _REGION = "ap-northeast-2"
 _METADATA_TTL_S = 300.0
 
 _connection: duckdb.DuckDBPyConnection | None = None
+_connection_lock = threading.Lock()
 _glue_client = None
 _metadata_cache: dict[str, tuple[str, float]] = {}
 
@@ -50,17 +52,19 @@ def load_extensions(connection: duckdb.DuckDBPyConnection) -> None:
 
 
 def get_connection() -> duckdb.DuckDBPyConnection:
+    """루트 커넥션 생성과 시크릿 재발급은 락으로 직렬화한다(스레드 간 CREATE SECRET 교차 방지)."""
     global _connection
-    if _connection is None:
-        connection = duckdb.connect()
-        load_extensions(connection)
-        memory_limit = os.getenv("DUCKDB_MEMORY_LIMIT")
-        if memory_limit:
-            connection.execute(f"SET memory_limit='{memory_limit}'")
-        connection.execute("SET unsafe_enable_version_guessing=false")
-        _connection = connection
-    _mint_s3_secret(_connection)
-    return _connection
+    with _connection_lock:
+        if _connection is None:
+            connection = duckdb.connect()
+            load_extensions(connection)
+            memory_limit = os.getenv("DUCKDB_MEMORY_LIMIT")
+            if memory_limit:
+                connection.execute(f"SET memory_limit='{memory_limit}'")
+            connection.execute("SET unsafe_enable_version_guessing=false")
+            _connection = connection
+        _mint_s3_secret(_connection)
+        return _connection
 
 
 def resolve_metadata_location(table: str) -> str:
@@ -90,4 +94,9 @@ def scan(table: str) -> str:
 
 
 def query_df(sql: str, params: list | None = None) -> pd.DataFrame:
-    return get_connection().execute(sql, params).df()
+    """쿼리는 항상 cursor() 사본에서 실행한다 — 루트 커넥션 공유는 스레드 안전하지 않다."""
+    cursor = get_connection().cursor()
+    try:
+        return cursor.execute(sql, params).df()
+    finally:
+        cursor.close()
