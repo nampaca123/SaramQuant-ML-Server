@@ -125,3 +125,41 @@ def test_missing_metadata_location_raises(glue, monkeypatch):
 
 def test_scan_wraps_metadata_location_in_iceberg_scan(glue):
     assert scan("stocks") == "iceberg_scan('s3://bucket/warehouse/stocks/metadata/1.json')"
+
+
+class RecordingConnection:
+    def __init__(self):
+        self.statements = []
+
+    def execute(self, sql, *args):
+        self.statements.append(sql)
+
+
+def test_load_extensions_installs_when_no_extension_dir(monkeypatch):
+    monkeypatch.delenv("DUCKDB_EXTENSION_DIR", raising=False)
+    connection = RecordingConnection()
+
+    lake_reader.load_extensions(connection)
+
+    assert connection.statements == [
+        "INSTALL httpfs",
+        "INSTALL iceberg",
+        "LOAD httpfs",
+        "LOAD iceberg",
+    ]
+
+
+def test_load_extensions_uses_baked_directory_without_installing(monkeypatch):
+    monkeypatch.setenv("DUCKDB_EXTENSION_DIR", "/opt/duckdb-extensions")
+    connection = RecordingConnection()
+
+    lake_reader.load_extensions(connection)
+
+    assert connection.statements == [
+        "SET extension_directory='/opt/duckdb-extensions'",
+        "SET autoinstall_known_extensions=false",
+        "SET autoload_known_extensions=false",
+        "LOAD httpfs",
+        "LOAD iceberg",
+    ]
+    assert not any(statement.startswith("INSTALL") for statement in connection.statements)

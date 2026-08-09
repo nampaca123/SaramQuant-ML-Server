@@ -35,14 +35,28 @@ def _mint_s3_secret(connection: duckdb.DuckDBPyConnection) -> None:
     )
 
 
+def load_extensions(connection: duckdb.DuckDBPyConnection) -> None:
+    """DUCKDB_EXTENSION_DIR이 있으면 이미지에 구워둔 확장만 LOAD한다(Lambda는 런타임 설치 불가)."""
+    extension_dir = os.getenv("DUCKDB_EXTENSION_DIR")
+    if extension_dir:
+        connection.execute(f"SET extension_directory='{extension_dir}'")
+        connection.execute("SET autoinstall_known_extensions=false")
+        connection.execute("SET autoload_known_extensions=false")
+    else:
+        connection.execute("INSTALL httpfs")
+        connection.execute("INSTALL iceberg")
+    connection.execute("LOAD httpfs")
+    connection.execute("LOAD iceberg")
+
+
 def get_connection() -> duckdb.DuckDBPyConnection:
     global _connection
     if _connection is None:
         connection = duckdb.connect()
-        connection.execute("INSTALL httpfs")
-        connection.execute("LOAD httpfs")
-        connection.execute("INSTALL iceberg")
-        connection.execute("LOAD iceberg")
+        load_extensions(connection)
+        memory_limit = os.getenv("DUCKDB_MEMORY_LIMIT")
+        if memory_limit:
+            connection.execute(f"SET memory_limit='{memory_limit}'")
         connection.execute("SET unsafe_enable_version_guessing=false")
         _connection = connection
     _mint_s3_secret(_connection)
