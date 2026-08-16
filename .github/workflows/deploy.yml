@@ -1,9 +1,11 @@
 name: deploy
 
 on:
-  pull_request:
-  push:
-    branches: [main]
+  # 2026-08-16 AWS 전면 teardown — 자동 배포 동결. 재개 시 아래 두 트리거의 주석을 해제한다.
+  # pull_request:
+  # push:
+  #   branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: terraform-state-${{ github.repository }}
