@@ -1,9 +1,4 @@
-# 버킷은 이미 계정에 존재하므로 CI plan/apply 시 import 블록으로 흡수한다
-import {
-  to = aws_s3_bucket.lake
-  id = "saramquant-bucket"
-}
-
+# 레이크 버킷 — teardown 이후 신규 생성 대상
 resource "aws_s3_bucket" "lake" {
   bucket = local.bucket
 }
