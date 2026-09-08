@@ -1,0 +1,119 @@
+# AWS 리소스 회수 전용 워크플로. 수동 실행 + confirm 입력이 있어야만 동작한다.
+# 레이크 버킷/Glue 카탈로그/Athena 워크그룹은 state에서 뺀 뒤 파괴해 데이터를 보존한다.
+name: destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "destroy" to confirm teardown'
+        required: true
+        type: string
+
+concurrency:
+  group: terraform-state-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  AWS_ACCESS_KEY_ID: ${{ secrets.SARAMQUANT_IAM_KEY_ACCESS }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.SARAMQUANT_IAM_KEY_SECRET }}
+  AWS_DEFAULT_REGION: ap-northeast-2
+  AWS_REGION: ap-northeast-2
+  TF_IN_AUTOMATION: "true"
+  TF_VAR_region: ap-northeast-2
+  TF_VAR_alpaca_api_key: ${{ secrets.ALPACA_API_KEY }}
+  TF_VAR_alpaca_secret_key: ${{ secrets.ALPACA_SECRET_KEY }}
+  TF_VAR_dart_api_key: ${{ secrets.DART_API_KEY }}
+  TF_VAR_ecos_api_key: ${{ secrets.ECOS_API_KEY }}
+  TF_VAR_fred_api_key: ${{ secrets.FRED_API_KEY }}
+  TF_VAR_finnhub_api_key: ${{ secrets.FINNHUB_API_KEY }}
+  TF_VAR_krx_id: ${{ secrets.KRX_ID }}
+  TF_VAR_krx_password: ${{ secrets.KRX_PASSWORD }}
+  TF_VAR_calc_auth_key: ${{ secrets.CALC_AUTH_KEY }}
+  # 파괴만 하므로 이미지 태그 실값은 불필요 — validation(length > 0)만 통과시킨다
+  TF_VAR_batch_image_tag: destroy
+  TF_VAR_api_image_tag: destroy
+
+jobs:
+  destroy:
+    name: terraform destroy
+    if: github.repository == 'nampaca123/saramquant-calc-server' && inputs.confirm == 'destroy'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify AWS credentials
+        run: aws sts get-caller-identity
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform init
+        run: cd infra && terraform init -reconfigure -input=false
+
+      - name: State before
+        run: cd infra && terraform state list
+
+      - name: Unmanage preserved resources
+        run: |
+          set -euo pipefail
+          cd infra
+          for addr in \
+            aws_s3_bucket.lake \
+            aws_s3_bucket_public_access_block.lake \
+            aws_s3_bucket_lifecycle_configuration.lake \
+            aws_glue_catalog_database.saramquant \
+            aws_athena_workgroup.saramquant; do
+            if terraform state list | grep -qxF "$addr"; then
+              terraform state rm "$addr"
+            else
+              echo "$addr not in state, skipping"
+            fi
+          done
+
+      - name: Verify preserved resources are unmanaged
+        run: |
+          set -euo pipefail
+          cd infra
+          terraform state list | tee state.txt
+          if grep -qE '^(aws_s3_bucket\.lake|aws_s3_bucket_public_access_block\.lake|aws_s3_bucket_lifecycle_configuration\.lake|aws_glue_catalog_database\.saramquant|aws_athena_workgroup\.saramquant)$' state.txt; then
+            echo "ERROR: a preserved resource is still managed - aborting before destroy." >&2
+            exit 1
+          fi
+
+      # ECR 리포지토리에 force_delete가 없어 이미지가 남아 있으면 destroy가 실패한다
+      - name: Empty ECR repositories
+        run: |
+          set -euo pipefail
+          for repo in saramquant-calc-batch saramquant-calc-api; do
+            ids=$(aws ecr list-images --repository-name "$repo" --query 'imageIds[*]' --output json 2>/dev/null || echo '[]')
+            if [ "$ids" != "[]" ]; then
+              aws ecr batch-delete-image --repository-name "$repo" --image-ids "$ids" >/dev/null
+              echo "emptied $repo"
+            else
+              echo "$repo already empty or absent"
+            fi
+          done
+
+      - name: Terraform plan (destroy)
+        run: cd infra && terraform plan -destroy -input=false -out=tfdestroy
+
+      - name: Terraform destroy
+        run: cd infra && terraform apply -input=false tfdestroy
+
+      - name: Verify preserved resources survived
+        run: |
+          set -euo pipefail
+          aws s3 ls s3://saramquant-bucket --recursive --summarize | tail -2
+          echo "glue tables: $(aws glue get-tables --database-name saramquant --query 'length(TableList)' --output text)"
+          echo "athena workgroup: $(aws athena get-work-group --work-group saramquant --query 'WorkGroup.Name' --output text)"
