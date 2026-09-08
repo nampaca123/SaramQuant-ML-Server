@@ -64,6 +64,7 @@ jobs:
       - name: State before
         run: cd infra && terraform state list
 
+      # grep -q가 첫 줄 매치 즉시 종료하면 SIGPIPE로 pipefail이 터진다 — 파일로 받아 검사한다
       - name: Unmanage preserved resources
         run: |
           set -euo pipefail
@@ -74,7 +75,8 @@ jobs:
             aws_s3_bucket_lifecycle_configuration.lake \
             aws_glue_catalog_database.saramquant \
             aws_athena_workgroup.saramquant; do
-            if terraform state list | grep -qxF "$addr"; then
+            terraform state list > state.txt
+            if grep -qxF "$addr" state.txt; then
               terraform state rm "$addr"
             else
               echo "$addr not in state, skipping"
@@ -85,7 +87,8 @@ jobs:
         run: |
           set -euo pipefail
           cd infra
-          terraform state list | tee state.txt
+          terraform state list > state.txt
+          cat state.txt
           if grep -qE '^(aws_s3_bucket\.lake|aws_s3_bucket_public_access_block\.lake|aws_s3_bucket_lifecycle_configuration\.lake|aws_glue_catalog_database\.saramquant|aws_athena_workgroup\.saramquant)$' state.txt; then
             echo "ERROR: a preserved resource is still managed - aborting before destroy." >&2
             exit 1
